@@ -4,15 +4,13 @@ echo "Usage ./nonTypedBlocks.sh <taintFile>"
 
 TAINT_FILE=${1:-/tmp/testfs.py}
 
-rm blockTaints operations
+rm blockTaints operations blockNumbers #operations
 
-cat $TAINT_FILE | grep "B(64," | cut -d"=" -f1 >> blockTaints
+cat $TAINT_FILE | sed '/^#/ d' | grep -v "^#" | grep "B(64," | cut -d"=" -f1 >> blockTaints
 
-cat $TAINT_FILE | grep "B(64," | cut -d"," -f2 >> blockNumbers
+cat $TAINT_FILE | sed '/^#/ d' | grep -v "^#" | grep "B(64," | cut -d"," -f2 >> blockNumbers
 
 paste -d" " blockTaints blockNumbers > TaintBlockFile
-
-declare -A taintBlockHash
 
 while read line; do
 	taint=`echo $line | cut -d" " -f1`
@@ -20,21 +18,25 @@ while read line; do
 	taintBlockHash[$taint]=$blockNum
 done < TaintBlockFile
 
-cat $TAINT_FILE | cut -d"=" -f2 >> operations
+cat $TAINT_FILE | sed '/^#/ d' | cut -d"=" -f2 >> operations
 
-while read taint; do
-	blockTaintStr=$taint"["
-	flag=1
-	while read operations; do
-		if [[ $operations == *$blockTaintStr* ]]; then
-			echo "$operations contains $blockTaintStr"
-			flag=0
-			#break	
-		fi
-	done < operations
-	if [[ $flag -eq 0 ]]; then
-		echo ${taintBlockHash[$taint]}
-	else
-		echo "flag is false"
-	fi
-done < blockTaints
+python nonTypedBlocks.py operations blockTaints TaintBlockFile
+
+#rm blockTaints operations blockNumbers operations
+
+#while read taint; do
+#	blockTaintStr=$taint"["
+#	flag=1
+#	while read operations; do
+#		if [[ $operations == *$blockTaintStr* ]]; then
+#			echo "$operations contains $blockTaintStr"
+#			flag=0
+#			#break	
+#		fi
+#	done < operations
+#	if [[ $flag -eq 0 ]]; then
+#		echo ${taintBlockHash[$taint]}
+#	else
+#		echo "flag is false"
+#	fi
+#done < blockTaints
