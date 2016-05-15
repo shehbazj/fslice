@@ -23,20 +23,3 @@ cat $TAINT_FILE | sed '/^#/ d' | cut -d"=" -f2 >> operations
 python nonTypedBlocks.py operations blockTaints TaintBlockFile
 
 #rm blockTaints operations blockNumbers operations
-
-#while read taint; do
-#	blockTaintStr=$taint"["
-#	flag=1
-#	while read operations; do
-#		if [[ $operations == *$blockTaintStr* ]]; then
-#			echo "$operations contains $blockTaintStr"
-#			flag=0
-#			#break	
-#		fi
-#	done < operations
-#	if [[ $flag -eq 0 ]]; then
-#		echo ${taintBlockHash[$taint]}
-#	else
-#		echo "flag is false"
-#	fi
-#done < blockTaints
