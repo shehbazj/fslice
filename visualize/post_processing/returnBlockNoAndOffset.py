@@ -9,6 +9,8 @@ def returnBlockNoAndOffset(taint_val,trace_file):
 		relevant_lines = []
 		flag = None
 		printFunctionNames = None
+		isFirstLine = True 
+		srcBlockNum = 0
 
 		taint_str = taint_val + '='
 		relevant = set([taint_str])
@@ -19,6 +21,9 @@ def returnBlockNoAndOffset(taint_val,trace_file):
 			line = line.strip()
 			curset = set(re.findall(r"t[0-9]+=", line))
 		 	if relevant.intersection(curset) and len(curset):
+				if isFirstLine:
+					srcBlockNum = re.findall('B\(64\,(.+?)\,',line)
+					isFirstLine = False
 		 		cur = re.findall(r"t[0-9]+", line)
 		 		sol = []
 		 		for taint in cur:
@@ -33,11 +38,18 @@ def returnBlockNoAndOffset(taint_val,trace_file):
 					relevant_lines.append(line)
 					flag = False
 
+		backTraceFile = str('transformations/b'+srcBlockNum[0]+'.'+taint_val)
+		#print backTraceFile
+		fo = open (backTraceFile,"wb")	
 		for line in relevant_lines:
+			fo.write(line)
+			fo.write('\n')
 			if 'O' in line:
 				offsetList = re.findall('t[0-9]+\[(.+?)\]',line)
 				#print offsetList
 			if 'B' in line and taint_str not in line:
 				bno = re.findall('B\(64\,(.+?)\,',line)
+				fo.close()
 				return (bno[0],offsetList)	
+	fo.close()
 	return (None,None)
