@@ -4,7 +4,7 @@ echo "Usage ./nonTypedBlocks.sh <taintFile>"
 
 TAINT_FILE=${1:-/tmp/testfs.py}
 
-rm blockTaints operations blockNumbers #operations
+rm -rf blockTaints operations blockNumbers #operations
 rm -rf forwardTrace forwardTraceTemplate
 mkdir forwardTrace
 mkdir forwardTraceTemplate
@@ -25,4 +25,4 @@ cat $TAINT_FILE | sed '/^#/ d' | cut -d"=" -f2 >> operations
 
 python nonTypedBlocks.py operations blockTaints TaintBlockFile
 
-#rm blockTaints operations blockNumbers operations
+rm -rf blockTaints operations blockNumbers #operations
