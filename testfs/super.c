@@ -11,7 +11,8 @@
 #include <fcntl.h>
 
 struct super_block *
-testfs_make_super_block(char *file) {
+testfs_make_super_block(char *file) 
+{
 	struct super_block *sb = calloc(1, sizeof(struct super_block));
 
 	if (!sb) {
@@ -34,21 +35,25 @@ testfs_make_super_block(char *file) {
 	return sb;
 }
 
-void testfs_make_inode_freemap(struct super_block *sb) {
+void testfs_make_inode_freemap(struct super_block *sb) 
+{
 	zero_blocks(sb, sb->sb.inode_freemap_start, INODE_FREEMAP_SIZE);
 }
 
-void testfs_make_block_freemap(struct super_block *sb) {
+void testfs_make_block_freemap(struct super_block *sb) 
+{
 	zero_blocks(sb, sb->sb.block_freemap_start, BLOCK_FREEMAP_SIZE);
 }
 
-void testfs_make_csum_table(struct super_block *sb) {
+void testfs_make_csum_table(struct super_block *sb) 
+{
 	/* number of data blocks cannot exceed size of checksum table */
 	assert(MAX_NR_CSUMS > NR_DATA_BLOCKS);
 	zero_blocks(sb, sb->sb.csum_table_start, CSUM_TABLE_SIZE);
 }
 
-void testfs_make_inode_blocks(struct super_block *sb) {
+void testfs_make_inode_blocks(struct super_block *sb) 
+{
 	/* dinodes should not span blocks */
 	assert((BLOCK_SIZE % sizeof(struct dinode)) == 0);
 	zero_blocks(sb, sb->sb.inode_blocks_start, NR_INODE_BLOCKS);
@@ -59,11 +64,12 @@ void testfs_make_inode_blocks(struct super_block *sb) {
  this function initializes all the in memory data structures maintained by the sb
  block.
  */
-int testfs_init_super_block(const char *file, int corrupt,
-		struct super_block **sbp) {
+int testfs_init_super_block(const char *file, int corrupt,struct super_block **sbp) 
+{
 	struct super_block *sb = malloc(sizeof(struct super_block));
 	char block[BLOCK_SIZE];
-	int ret, sock;
+	int ret;
+	int sock;
 
 	if (!sb) {
 		return -ENOMEM;
@@ -129,7 +135,8 @@ int testfs_init_super_block(const char *file, int corrupt,
  * from in memory data structure sb, copy dsuper_block
  * into buffer block. then send it for writing to write_blocks
  */
-void testfs_write_super_block(struct super_block *sb) {
+void testfs_write_super_block(struct super_block *sb) 
+{
 	char block[BLOCK_SIZE] = { 0 };
 
 	assert(sizeof(struct dsuper_block) <= BLOCK_SIZE);
@@ -137,7 +144,8 @@ void testfs_write_super_block(struct super_block *sb) {
 	write_blocks(sb, block, 0, 1);
 }
 
-void testfs_close_super_block(struct super_block *sb) {
+void testfs_close_super_block(struct super_block *sb) 
+{
 	testfs_tx_start(sb, TX_UMOUNT);
 	// write sb->sb of type dsuper_block to disk at offset 0.
 	testfs_write_super_block(sb);
@@ -168,7 +176,8 @@ void testfs_close_super_block(struct super_block *sb) {
 	free(sb);
 }
 
-static void testfs_write_inode_freemap(struct super_block *sb, int inode_nr) {
+static void testfs_write_inode_freemap(struct super_block *sb, int inode_nr) 
+{
 	char *freemap;
 	int nr;
 
@@ -179,7 +188,8 @@ static void testfs_write_inode_freemap(struct super_block *sb, int inode_nr) {
 			sb->sb.inode_freemap_start + nr, 1);
 }
 
-static void testfs_write_block_freemap(struct super_block *sb, int block_nr) {
+static void testfs_write_block_freemap(struct super_block *sb, int block_nr) 
+{
 	char *freemap;
 	int nr;
 
@@ -191,7 +201,8 @@ static void testfs_write_block_freemap(struct super_block *sb, int block_nr) {
 }
 
 /* return free block number or negative value */
-static int testfs_get_block_freemap(struct super_block *sb) {
+static int testfs_get_block_freemap(struct super_block *sb) 
+{
 	u_int32_t index;
 	int ret;
 
@@ -204,14 +215,16 @@ static int testfs_get_block_freemap(struct super_block *sb) {
 }
 
 /* release allocated block */
-static void testfs_put_block_freemap(struct super_block *sb, int block_nr) {
+static void testfs_put_block_freemap(struct super_block *sb, int block_nr) 
+{
 	assert(sb->block_freemap);
 	bitmap_unmark(sb->block_freemap, block_nr);
 	testfs_write_block_freemap(sb, block_nr);
 }
 
 /* return free inode number or negative value */
-int testfs_get_inode_freemap(struct super_block *sb) {
+int testfs_get_inode_freemap(struct super_block *sb) 
+{
 	u_int32_t index;
 	int ret;
 
@@ -224,7 +237,8 @@ int testfs_get_inode_freemap(struct super_block *sb) {
 }
 
 /* release allocated inode */
-void testfs_put_inode_freemap(struct super_block *sb, int inode_nr) {
+void testfs_put_inode_freemap(struct super_block *sb, int inode_nr) 
+{
 	assert(sb->inode_freemap);
 	bitmap_unmark(sb->inode_freemap, inode_nr);
 	testfs_write_inode_freemap(sb, inode_nr);
@@ -232,7 +246,8 @@ void testfs_put_inode_freemap(struct super_block *sb, int inode_nr) {
 
 /* allocate a block and return its block number.
  * returns negative value on error. */
-int testfs_alloc_block(struct super_block *sb, char *block) {
+int testfs_alloc_block(struct super_block *sb, char *block) 
+{
 	int phy_block_nr;
 
 	phy_block_nr = testfs_get_block_freemap(sb);
@@ -245,8 +260,8 @@ int testfs_alloc_block(struct super_block *sb, char *block) {
 
 /* free a block.
  * returns negative value on error. */
-int testfs_free_block(struct super_block *sb, int block_nr) {
-
+int testfs_free_block(struct super_block *sb, int block_nr) 
+{
 	zero_blocks(sb, block_nr, 1);
 	block_nr -= sb->sb.data_blocks_start;
 	assert(block_nr >= 0);
@@ -254,8 +269,8 @@ int testfs_free_block(struct super_block *sb, int block_nr) {
 	return 0;
 }
 
-static int testfs_checkfs(struct super_block *sb, struct bitmap *i_freemap,
-		struct bitmap *b_freemap, int inode_nr) {
+static int testfs_checkfs(struct super_block *sb, struct bitmap *i_freemap, struct bitmap *b_freemap, int inode_nr) 
+{
 	struct inode *in = testfs_get_inode(sb, inode_nr);
 	int size;
 	int size_roundup = ROUNDUP(testfs_inode_get_size(in), BLOCK_SIZE);
@@ -281,8 +296,10 @@ static int testfs_checkfs(struct super_block *sb, struct bitmap *i_freemap,
 	return 0;
 }
 
-int cmd_checkfs(struct super_block *sb, struct context *c) {
-	struct bitmap *i_freemap, *b_freemap;
+int cmd_checkfs(struct super_block *sb, struct context *c) 
+{
+	struct bitmap *i_freemap;
+	struct bitmap *b_freemap;
 	int ret;
 
 	if (c->nargs != 1) {

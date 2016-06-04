@@ -28,7 +28,8 @@ static struct hlist_head *inode_hash_table = NULL;
 
 static const int inode_hash_size = (1 << INODE_HASH_SHIFT);
 
-void inode_hash_init(void) {
+void inode_hash_init(void) 
+{
 	int i;
 	// hash table is of size 256 bytes
 	inode_hash_table = malloc(inode_hash_size * sizeof(struct hlist_head));
@@ -40,7 +41,8 @@ void inode_hash_init(void) {
 	}
 }
 
-void inode_hash_destroy(void) {
+void inode_hash_destroy(void) 
+{
 	int i;
 	assert(inode_hash_table);
 	for (i = 0; i < inode_hash_size; i++) {
@@ -50,7 +52,8 @@ void inode_hash_destroy(void) {
 }
 
 static struct inode *
-inode_hash_find(struct super_block *sb, int inode_nr) {
+inode_hash_find(struct super_block *sb, int inode_nr) 
+{
 	struct hlist_node *elem;
 	struct inode *in;
 
@@ -64,12 +67,14 @@ inode_hash_find(struct super_block *sb, int inode_nr) {
 	return NULL;
 }
 
-static void inode_hash_insert(struct inode *in) {
+static void inode_hash_insert(struct inode *in) 
+{
 	INIT_HLIST_NODE(&in->hnode);
 	hlist_add_head(&in->hnode, &inode_hash_table[inode_hashfn(in->i_nr)]);
 }
 
-static void inode_hash_remove(struct inode *in) {
+static void inode_hash_remove(struct inode *in) 
+{
 	hlist_del(&in->hnode);
 }
 
@@ -80,27 +85,31 @@ static void inode_hash_remove(struct inode *in) {
  the BLOCK_SIZE / dinode size.
  */
 
-static int testfs_inode_to_block_nr(struct inode *in) {
+static int testfs_inode_to_block_nr(struct inode *in) 
+{
 	int block_nr = in->i_nr / INODES_PER_BLOCK;
 	assert(block_nr >= 0);
 	assert(block_nr < NR_INODE_BLOCKS);
 	return block_nr;
 }
 
-static int testfs_inode_to_block_offset(struct inode *in) {
+static int testfs_inode_to_block_offset(struct inode *in) 
+{
 	int block_offset = (in->i_nr % INODES_PER_BLOCK) * sizeof(struct dinode);
 	assert(block_offset >= 0);
 	assert(block_offset < BLOCK_SIZE);
 	return block_offset;
 }
 
-static void testfs_read_inode_block(struct inode *in, char *block) {
+static void testfs_read_inode_block(struct inode *in, char *block) 
+{
 	int block_nr = testfs_inode_to_block_nr(in);
 	// read from in->sb into block buffer.
 	read_blocks(in->sb, block, in->sb->sb.inode_blocks_start + block_nr, 1);
 }
 
-static void testfs_write_inode_block(struct inode *in, char *block) {
+static void testfs_write_inode_block(struct inode *in, char *block) 
+{
 	int block_nr = testfs_inode_to_block_nr(in);
 	write_blocks(in->sb, block, in->sb->sb.inode_blocks_start + block_nr, 1);
 }
@@ -111,7 +120,8 @@ static void testfs_write_inode_block(struct inode *in, char *block) {
  * returns negative value on other errors. */
 
 // also reads the block into block buffer.
-static int testfs_get_block(struct inode *in, char *block, int log_block_nr) {
+static int testfs_get_block(struct inode *in, char *block, int log_block_nr) 
+{
 	int phy_block_nr;
 
 	assert(log_block_nr >= 0);
@@ -131,8 +141,8 @@ static int testfs_get_block(struct inode *in, char *block, int log_block_nr) {
 	return phy_block_nr;
 }
 
-static int testfs_allocate_block(struct inode *in, char *block,
-		int log_block_nr) {
+static int testfs_allocate_block(struct inode *in, char *block, int log_block_nr) 
+{
 	char indirect[BLOCK_SIZE];
 	int phy_block_nr;
 
@@ -193,8 +203,8 @@ static int testfs_allocate_block(struct inode *in, char *block,
  read the inode from the 
  */
 
-struct inode *
-testfs_get_inode(struct super_block *sb, int inode_nr) {
+struct inode *testfs_get_inode(struct super_block *sb, int inode_nr) 
+{
 	char block[BLOCK_SIZE];
 	int block_offset;
 	struct inode *in;
@@ -226,7 +236,8 @@ testfs_get_inode(struct super_block *sb, int inode_nr) {
 	return in;
 }
 
-void testfs_sync_inode(struct inode *in) {
+void testfs_sync_inode(struct inode *in) 
+{
 	char block[BLOCK_SIZE];
 	int block_offset;
 
@@ -238,7 +249,8 @@ void testfs_sync_inode(struct inode *in) {
 	in->i_flags &= ~I_FLAGS_DIRTY;
 }
 
-void testfs_put_inode(struct inode *in) {
+void testfs_put_inode(struct inode *in) 
+{
 	assert((in->i_flags & I_FLAGS_DIRTY) == 0);
 	if (--in->i_count == 0) {
 		inode_hash_remove(in);
@@ -246,26 +258,29 @@ void testfs_put_inode(struct inode *in) {
 	}
 }
 
-inline int testfs_inode_get_size(struct inode *in) {
+inline int testfs_inode_get_size(struct inode *in) 
+{
 	return in->in.i_size;
 }
 
-inline inode_type testfs_inode_get_type(struct inode *in) {
+inline inode_type testfs_inode_get_type(struct inode *in) 
+{
 	return in->in.i_type;
 }
 
-inline int testfs_inode_get_nr(struct inode *in) {
+inline int testfs_inode_get_nr(struct inode *in) 
+{
 	return in->i_nr;
 }
 
-inline struct super_block *
-testfs_inode_get_sb(struct inode *in) {
+inline struct super_block * testfs_inode_get_sb(struct inode *in) 
+{
 	return in->sb;
 }
 
 /* returns negative value on error */
-int testfs_create_inode(struct super_block *sb, inode_type type,
-		struct inode **inp) {
+int testfs_create_inode(struct super_block *sb, inode_type type, struct inode **inp) 
+{
 	struct inode *in;
 	int inode_nr = testfs_get_inode_freemap(sb);
 
@@ -281,7 +296,8 @@ int testfs_create_inode(struct super_block *sb, inode_type type,
 	return 0;
 }
 
-void testfs_remove_inode(struct inode *in) {
+void testfs_remove_inode(struct inode *in) 
+{
 	testfs_truncate_data(in, 0);
 	/* zero the inode */
 	_bzero(&in->in, sizeof(struct dinode));
@@ -294,7 +310,8 @@ void testfs_remove_inode(struct inode *in) {
 /* read data from inode in, from start to start+size, into buf[size].
  * return 0 on success.
  * return negative value on error. */
-int testfs_read_data(struct inode *in, int start, char *buf, const int size) {
+int testfs_read_data(struct inode *in, int start, char *buf, const int size) 
+{
 	char block[BLOCK_SIZE];
 	int b_offset = start % BLOCK_SIZE; /* src offset in block for copy */
 	int buf_offset = 0; /* dst offset in buf for copy */
@@ -336,7 +353,8 @@ int testfs_read_data(struct inode *in, int start, char *buf, const int size) {
  * return 0 on success.
  * return negative value on error. */
 /* TODO: on error, deallocate blocks */
-int testfs_write_data(struct inode *in, int start, char *buf, const int size) {
+int testfs_write_data(struct inode *in, int start, char *buf, const int size) 
+{
 	char block[BLOCK_SIZE];
 	int b_offset = start % BLOCK_SIZE; /* dst offset in block for copy */
 	int buf_offset = 0; /* src offset in buf for copy */
@@ -378,7 +396,8 @@ int testfs_write_data(struct inode *in, int start, char *buf, const int size) {
 	return 0;
 }
 
-void testfs_truncate_data(struct inode *in, const int size) {
+void testfs_truncate_data(struct inode *in, const int size) 
+{
 	int i;
 	int s_block_nr;
 	int e_block_nr;
@@ -423,8 +442,8 @@ void testfs_truncate_data(struct inode *in, const int size) {
 	in->i_flags |= I_FLAGS_DIRTY;
 }
 
-int testfs_check_inode(struct super_block *sb, struct bitmap *b_freemap,
-		struct inode *in) {
+int testfs_check_inode(struct super_block *sb, struct bitmap *b_freemap, struct inode *in) 
+{
 	int size = 0;
 	int i;
 	char block[BLOCK_SIZE];

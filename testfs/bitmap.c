@@ -50,7 +50,8 @@ int bitmap_create(u_int32_t nbits, struct bitmap **bp) {
 
 	/* Mark any leftover bits at the end in use */
 	if (nbits / BITS_PER_WORD < words) {
-		u_int32_t j, ix = words - 1;
+		u_int32_t j;
+		u_int32_t ix = words - 1;
 		u_int32_t overbits = nbits - ix * BITS_PER_WORD;
 
 		assert(nbits / BITS_PER_WORD == words-1);

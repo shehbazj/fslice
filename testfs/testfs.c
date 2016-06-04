@@ -30,15 +30,16 @@ static struct {
         { "rm",         cmd_rm,         2, },
         { "mkdir",      cmd_mkdir,      2, },
         { "cat",        cmd_cat,        MAX_ARGS, },
-		{ "catr",       cmd_catr,       2, },
+	{ "catr",       cmd_catr,       2, },
         { "write",      cmd_write,      2, },
-		{ "owrite",     cmd_owrite,		3, },
+	{ "owrite",     cmd_owrite,		3, },
         { "checkfs",    cmd_checkfs,    1, },
         { "quit",    	cmd_quit,       1, },
         { NULL,         NULL}
 };
 
-static int cmd_help(struct super_block *sb, struct context *c) {
+static int cmd_help(struct super_block *sb, struct context *c) 
+{
 	int i = 0;
 
 	printf("Commands:\n");
@@ -48,7 +49,8 @@ static int cmd_help(struct super_block *sb, struct context *c) {
 	return 0;
 }
 
-static int cmd_quit(struct super_block *sb, struct context *c) {
+static int cmd_quit(struct super_block *sb, struct context *c) 
+{
 	printf("Bye!\n");
 	can_quit = true;
 	return 0;
@@ -57,9 +59,10 @@ static int cmd_quit(struct super_block *sb, struct context *c) {
 // tokenize the command, place it in the form of cmd, arg1, arg2 ... in
 // context c->cmd[] structure. pass c and superblock sb to cmdtable->func
 
-static void handle_command(struct super_block *sb, struct context *c,
-		char * name, char * args) {
-	int i, j = 0;
+static void handle_command(struct super_block *sb, struct context *c, char * name, char * args) 
+{
+	int i;
+	int j = 0;
 	if (name == NULL)
 		return;
 
@@ -98,7 +101,8 @@ static void handle_command(struct super_block *sb, struct context *c,
 	printf("%s: command not found: type ? for help...\n", c->cmd[0]);
 }
 
-static void usage(const char * progname) {
+static void usage(const char * progname) 
+{
 	fprintf(stdout, "Usage: %s [-ch][--help] rawfile\n", progname);
 	exit(1);
 }
@@ -108,8 +112,8 @@ struct args {
 	int corrupt;        // to corrupt or not
 };
 
-static struct args *
-parse_arguments(int argc, char * const argv[]) {
+static struct args *parse_arguments(int argc, char * const argv[]) 
+{
 	static struct args args = { 0 };
 // struct options -
 // name of the option. 
@@ -154,7 +158,8 @@ parse_arguments(int argc, char * const argv[]) {
 	return &args;
 }
 
-int main(int argc, char * const argv[]) {
+int main(int argc, char * const argv[]) 
+{
 	struct super_block *sb;
 	char *line = NULL;
 	size_t line_size = 0;
