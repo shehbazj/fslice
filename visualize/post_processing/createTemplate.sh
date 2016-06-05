@@ -46,6 +46,7 @@ for file in $FILES; do
 	echo "Processing $file"
 	
 	taintLine=`head -1 $file`
+    echo $taintLine
 	taintValue=`echo $taintLine | cut -d'=' -f1`
 	
 	#echo "global removeConstants" > template/body.py

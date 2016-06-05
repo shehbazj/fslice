@@ -1,0 +1,7 @@
+t9=B(64,0,t4,t8, 9) # GetBlock(64, 0)
+t8=A("add",t1,t1, 8)
+# read_blocks()
+t4=V(64, 4) # Taint<4, 0, 0>
+# testfs_init_super_block()
+t1=V(0, 1) # Taint<1, 0, 0>
+# main()

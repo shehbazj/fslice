@@ -1,0 +1,16 @@
+t493=B(64,64,t4,t492, 493) # GetBlock(64, 64)
+t492=A("add",t490,t1, 492)
+# read_blocks()
+t490=A("add",t489,t488, 490)
+t489=O(t9,489,t9[12],t9[13],t9[14],t9[15]) # Load(13557980, 4)
+t488=A("udiv",t1,t34, 488)
+# testfs_inode_to_block_nr()
+t34=V(2, 34) # Taint<34, 0, 0>
+# bitmap_getdata()
+t9=B(64,0,t4,t8, 9) # GetBlock(64, 0)
+t8=A("add",t1,t1, 8)
+# read_blocks()
+t4=V(64, 4) # Taint<4, 0, 0>
+# testfs_init_super_block()
+t1=V(0, 1) # Taint<1, 0, 0>
+# main()

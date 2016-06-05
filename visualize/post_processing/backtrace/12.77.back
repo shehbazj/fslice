@@ -1,0 +1,22 @@
+t77=B(64,12,t4,t76, 77) # GetBlock(64, 12)
+t76=A("add",t44,t74, 76)
+t74=A("add",t70,t2, 74)
+t70=A("add",t66,t2, 70)
+t66=A("add",t62,t2, 66)
+t62=A("add",t58,t2, 62)
+t58=A("add",t54,t2, 58)
+t54=A("add",t41,t2, 54)
+# read_blocks()
+t44=O(t9,44,t9[8],t9[9],t9[10],t9[11]) # Load(13557976, 4)
+t41=A("add",t10,t2, 41)
+# read_blocks()
+t10=A("add",t1,t2, 10)
+t9=B(64,0,t4,t8, 9) # GetBlock(64, 0)
+t8=A("add",t1,t1, 8)
+# read_blocks()
+t4=V(64, 4) # Taint<4, 0, 0>
+# testfs_init_super_block()
+t2=V(1, 2) # Taint<2, 0, 0>
+# parse_arguments()
+t1=V(0, 1) # Taint<1, 0, 0>
+# main()

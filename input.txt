@@ -1,0 +1,4 @@
+touch file1
+touch longerfile2
+write file1 garbagehellothere
+write longerfile2 text
