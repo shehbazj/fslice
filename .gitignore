@@ -5,7 +5,7 @@ llvm/*
 whole-program-llvm/*
 .project
 .cproject
-cscope.out
+*cscope*
 tags
 
 # Testfs stuff.
