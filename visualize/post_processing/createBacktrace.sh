@@ -74,3 +74,5 @@ do
 	createBlockVisualizeFile
 #	normalizeBackTraceFile()	
 done < $BNUM_TAINT_FILE
+
+rm $BNUM_TAINT_FILE

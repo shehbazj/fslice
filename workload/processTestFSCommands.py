@@ -146,14 +146,17 @@ def getInode():
     return inode_number, inode_offset
 
 if __name__ == "__main__":
+    # Path to root directory.
+    ROOT_PATH = "/"
+
     # Commands to ignore.
-    commands_to_ignore = ["catr", "checkfs", "ls", "lsr"]
+    commands_to_ignore = ["cat", "catr", "checkfs", "ls", "lsr"]
 
     # Initialize the current directory to be the root.
-    current_directory = "/"
+    current_directory = ROOT_PATH
 
     # Initialize the full path to the parent directory.
-    path_to_parent = "/"
+    path_to_parent = ROOT_PATH
 
     # Maintain a stack of directory names, in order to calculate the
     # current directory in case of 'cd' operations.
@@ -265,6 +268,9 @@ if __name__ == "__main__":
             if arguments[1] == ".." or arguments[1] == "../":
                 # The current directory will be equal to the directory
                 # that was inserted last into the stack.
+                if path_to_parent == ROOT_PATH:
+                    continue
+                
                 current_directory = directory_stack.pop()
             else:
                 # Make sure that the directory name ends with '/'.
@@ -365,7 +371,7 @@ if __name__ == "__main__":
 
         # If the entry is a directory, then count the inode number of each directory
         # entry as an on-disk pointer.
-        # info.calculate_directory_entry_pointers()
+        info.calculate_directory_entry_pointers()
 
     # There is at least direct pointer for the '/' (root) directory.
     assert(total_direct_pointers > 5)
@@ -380,12 +386,12 @@ if __name__ == "__main__":
     total_on_disk_pointers = len(on_disk_pointers)
     assert ((total_on_disk_pointers % POINTER_SIZE) == 0)
     total_on_disk_pointers /= POINTER_SIZE
-    assert (total_on_disk_pointers == (total_direct_pointers + total_indirect_pointers))
+    #   assert (total_on_disk_pointers == (total_direct_pointers + total_indirect_pointers))
 
     # The following statement must be executed only if the processing script
     # also considers inode numbers inside directory entries as on-disk pointers.
-    # assert ((total_direct_pointers + total_indirect_pointers + total_files +
-    #         (total_directories * 3) - 1) == total_on_disk_pointers)
+    assert ((total_direct_pointers + total_indirect_pointers + total_files +
+             (total_directories * 3) - 1) == total_on_disk_pointers)
 
     print "Statistics:"
     if args.VERBOSE:
