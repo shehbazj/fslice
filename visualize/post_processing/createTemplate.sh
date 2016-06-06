@@ -63,3 +63,6 @@ for file in $FILES; do
 	python $WORKING_DIR/prenormalize/$file.py > $WORKING_DIR/templates/$file.template
 	$WORKING_DIR/computeTemplateCksum.sh $file $blockNumber $removeConstants
 done
+
+rm -rf $WORKING_DIR/prenormalize/
+
