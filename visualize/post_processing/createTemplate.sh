@@ -23,8 +23,8 @@ mkdir $DEST_DIR
 
 # the variable replaces all constants with character 'C'
 # useful for standardising templates
-removeConstants=True
-#removeConstants=False
+#removeConstants=True
+removeConstants=False
 
 # Prints the full path of the current directory.
 #DIR=$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )
@@ -61,5 +61,5 @@ for file in $FILES; do
 	# 1 - retain variables
 	blockNumber=`echo $file | cut -d'.' -f1`
 	python $WORKING_DIR/prenormalize/$file.py > $WORKING_DIR/templates/$file.template
-	$WORKING_DIR/computeTemplateCksum.sh $file $blockNumber $removeConstants
+	#$WORKING_DIR/computeTemplateCksum.sh $file $blockNumber $removeConstants
 done
