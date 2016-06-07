@@ -18,7 +18,7 @@ int cmd_cat(struct super_block *sb, struct context *c)
 	}
 
 	for (i = 1; ret == 0 && i < c->nargs; i++) {
-		inode_nr = testfs_dir_name_to_inode_nr(c->cur_dir, c->cmd[i]);
+		inode_nr = testfs_dir_name_to_inode_nr(sb, &c->cur_dir, c->cmd[i]);
 		if (inode_nr < 0)
 			return inode_nr;
 		in = testfs_get_inode(sb, inode_nr);
@@ -71,7 +71,7 @@ int cmd_catr(struct super_block *sb, struct context *c)
 	/* Get the inode number that corresponds to the provided
 	 * directory name. If no directory name is specified, search
 	 * for the current directory. */
-	inode_nr = testfs_dir_name_to_inode_nr(c->cur_dir, cdir);
+	inode_nr = testfs_dir_name_to_inode_nr(sb, &c->cur_dir, cdir);
 	if (inode_nr < 0)
 		return inode_nr;
 
@@ -136,7 +136,7 @@ int cmd_write(struct super_block *sb, struct context *c)
 	filename = c->cmd[1];
 	content = c->cmd[2];
 
-	inode_nr = testfs_dir_name_to_inode_nr(c->cur_dir, filename);
+	inode_nr = testfs_dir_name_to_inode_nr(sb, &c->cur_dir, filename);
 	if (inode_nr < 0)
 		return inode_nr;
 	in = testfs_get_inode(sb, inode_nr);
@@ -167,17 +167,20 @@ int cmd_owrite(struct super_block *sb, struct context *c)
 	char *content = NULL;
 	char *temp = NULL;
 
-	if (c->nargs != 4) {
+	if (c->nargs != 4)
 		return -EINVAL;
-	}
 
 	filename = c->cmd[1];
+	content = c->cmd[3];
 	offset = strtol(c->cmd[2], &temp, 10);
 	if (*temp != '\0')
-		return -1;
-	content = c->cmd[3];
+		return -EINVAL;
 
-	inode_nr = testfs_dir_name_to_inode_nr(c->cur_dir, filename);
+	/* Verify the validity of the specified offset. */
+	if(offset < 0)
+		return -EINVAL;
+
+	inode_nr = testfs_dir_name_to_inode_nr(sb, &c->cur_dir, filename);
 	if (inode_nr < 0)
 		return inode_nr;
 	in = testfs_get_inode(sb, inode_nr);
@@ -197,3 +200,68 @@ int cmd_owrite(struct super_block *sb, struct context *c)
 	return ret;
 }
 
+int cmd_oread(struct super_block *sb, struct context *c) {
+	int inode_nr;
+	struct inode *in;
+	int size, file_size;
+	int ret = 0;
+	long offset;
+	char *buf;
+	char *temp = NULL;
+
+	if (c->nargs != 4)
+		return -EINVAL;
+
+	offset = strtol(c->cmd[2], &temp, 10);
+	if (*temp != '\0')
+		return -EINVAL;
+
+	size = strtol(c->cmd[3], &temp, 10);
+	if (*temp != '\0')
+		return -EINVAL;
+
+	/* Verify the validity of the specified arguments. */
+	if(offset < 0 || size < 0)
+		return -EINVAL;
+
+	if(size == 0)
+		return ret;
+
+	inode_nr = testfs_dir_name_to_inode_nr(sb, &c->cur_dir, c->cmd[1]);
+	if (inode_nr < 0)
+		return inode_nr;
+
+	in = testfs_get_inode(sb, inode_nr);
+	if (testfs_inode_get_type(in) == I_DIR) {
+		ret = -EISDIR;
+		goto out;
+	}
+
+	file_size = testfs_inode_get_size(in);
+	if (file_size > 0) {
+
+		/* Verify that the specified offset is valid. */
+		if(offset >= file_size) {
+			ret = -EINVAL;
+			goto out;
+		}
+
+		/* In case the specified arguments exceed the available offsets
+		 * inside the file, truncate the specified size. */
+		if(offset + size > file_size)
+			size = file_size - offset;
+
+		buf = malloc(size + 1);
+		if (!buf) {
+			ret = -ENOMEM;
+			goto out;
+		}
+		testfs_read_data(in, offset, buf, size);
+		buf[size] = 0;
+		printf("%s\n", buf);
+		free(buf);
+	}
+
+	out: testfs_put_inode(in);
+	return ret;
+}

@@ -252,19 +252,62 @@ static int testfs_create_empty_dir(struct super_block *sb, int p_inode_nr, struc
  dir is the inode corresponding to current directory.
  */
 
-static int testfs_create_file_or_dir(struct super_block *sb, struct inode *dir, inode_type type, char *name) 
+static int testfs_create_file_or_dir(struct super_block *sb, struct context *c, inode_type type, char *name)
 {
-	int ret = 0;
+	int name_offset;
+	int ret;
 	struct inode *in;
 	int inode_nr;
+	char *name_to_create = name;
+	int current_inode;
 
-	if (dir) {
-		// Check if the specified name exists inside the current directory.
-		inode_nr = testfs_dir_name_to_inode_nr(dir, name);
-		if (inode_nr >= 0)
+	if(name != NULL) {
+		if(!strcmp(name, "/"))
 			return -EEXIST;
+
+		/* Search for the first occurrence of '/', starting from the end of the specified name. */
+		for(name_offset = strlen(name) - 1; name_offset >= 0; --name_offset)
+			if(name[name_offset] == '/')
+				break;
+
+		if(name_offset >= 0) {
+			/* In case the specified path is an absolute path to a file or directory
+			 * inside the root directory, increase the offset by 1, in order to set
+			 * the path variable equal to "/". */
+			if(name_offset == 0)
+				++name_offset;
+
+			/* The specified path represents either an absolute or a relative path. */
+			char *path = malloc(name_offset + 1);
+			if(path == NULL)
+				return -ENOMEM;
+
+			/* Copy the path until the last occurrence of '/', store the current inode
+			 * number and finally, change directory. */
+			strncpy(path, name, name_offset);
+			current_inode = testfs_inode_get_nr(c->cur_dir);
+			c->cmd[1] = path;
+			ret = cmd_cd(sb, c);
+			free(path);
+
+			if(ret < 0)
+				return ret;
+
+			/* Update the offset to the start of the new name. */
+			name_to_create = name + name_offset + 1;
+		}
 	}
+
 	testfs_tx_start(sb, TX_CREATE);
+	if (c) {
+		// Check if the specified name exists inside the current directory.
+		inode_nr = testfs_dir_name_to_inode_nr(sb, &c->cur_dir, name_to_create);
+		if (inode_nr >= 0) {
+			ret = -EEXIST;
+			goto fail;
+		}
+	}
+
 	/* first create inode */
 	/*
 	 * allocates a new inode number in inode freemap.
@@ -278,7 +321,7 @@ static int testfs_create_file_or_dir(struct super_block *sb, struct inode *dir, 
 	inode_nr = testfs_inode_get_nr(in);
 
 	if (type == I_DIR) { /* create directory */
-		int p_inode_nr = dir ? testfs_inode_get_nr(dir) : inode_nr;
+		int p_inode_nr = c ? testfs_inode_get_nr(c->cur_dir) : inode_nr;
 		ret = testfs_create_empty_dir(sb, p_inode_nr, in);
 		if (ret < 0)
 			goto out;
@@ -286,21 +329,34 @@ static int testfs_create_file_or_dir(struct super_block *sb, struct inode *dir, 
 	/* then add directory entry */
 	// inode_nr is the number of the newly created inode
 	// dir - name of parent directory. name- name of new file/directory
-	if (dir) {
-		if ((ret = testfs_add_dirent(dir, name, inode_nr)) < 0)
+	if (c) {
+		if ((ret = testfs_add_dirent(c->cur_dir, name_to_create, inode_nr)) < 0)
 			goto out;
-		testfs_sync_inode(dir);
+		testfs_sync_inode(c->cur_dir);
 	}
 	testfs_sync_inode(in);
 	testfs_put_inode(in);
 	testfs_tx_commit(sb, TX_CREATE);
+
+	/* Restore the current directory to its previous path, before the invocation of this function. */
+	if(name != NULL && name_offset > 0) {
+		testfs_put_inode(c->cur_dir);
+		c->cur_dir = testfs_get_inode(sb, current_inode);
+	}
 	return 0;
+
 	out: testfs_remove_inode(in);
 	fail: testfs_tx_commit(sb, TX_CREATE);
+
+	/* Restore the current directory to its previous path, before the invocation of this function. */
+	if(name != NULL && name_offset > 0) {
+		testfs_put_inode(c->cur_dir);
+		c->cur_dir = testfs_get_inode(sb, current_inode);
+	}
 	return ret;
 }
 
-static int testfs_pwd(struct super_block *sb, struct inode *in) 
+static int testfs_pwd(struct super_block *sb, struct inode *in)
 {
 	int p_inode_nr;
 	struct inode *p_in;
@@ -309,7 +365,7 @@ static int testfs_pwd(struct super_block *sb, struct inode *in)
 
 	assert(in);
 	assert(testfs_inode_get_nr(in) >= 0);
-	p_inode_nr = testfs_dir_name_to_inode_nr(in, "..");
+	p_inode_nr = testfs_dir_name_to_inode_nr(sb, &in, "..");
 	assert(p_inode_nr >= 0);
 	if (p_inode_nr == testfs_inode_get_nr(in)) {
 		printf("/");
@@ -326,25 +382,94 @@ static int testfs_pwd(struct super_block *sb, struct inode *in)
 	return 0;
 }
 
+int testfs_dir_name_to_inode_nr_rec(struct super_block *sb, struct inode **dir, char *name)
+{
+	struct inode *p_in;
+	struct dirent *d;
+	int i;
+	int offset = 0;
+	int name_offset = -1;
+	int ret = -ENOENT;
+	char *entry_name;
+	char *name_to_search = name;
+
+	assert(*dir);
+	assert(name);
+	assert(testfs_inode_get_type(*dir) == I_DIR);
+
+	if(!strcmp(name, "/")) {
+		/* Special case where the specified directory equals to root. */
+		return 0;
+	}
+	else {
+		for(i = 0; i < strlen(name); ++i) {
+			if(name[i] == '/') {
+				name_offset = i;
+				break;
+			}
+		}
+
+		if(name_offset == 0) {
+			p_in = testfs_get_inode(sb, 0);
+			testfs_put_inode(*dir);
+			(*dir) = p_in;
+
+			return testfs_dir_name_to_inode_nr_rec(sb, dir, name + 1);
+		}
+		else if(name_offset == (strlen(name) - 1))
+			return ret;
+		else {
+			if(name_offset != -1) {
+				entry_name = malloc(name_offset + 1);
+				if (!entry_name)
+					return -ENOMEM;
+
+				strncpy(entry_name, name, name_offset);
+				name_to_search = entry_name;
+			}
+
+			for (; ret < 0 && (d = testfs_next_dirent(*dir, &offset)); free(d)) {
+				//fslice_name(D_NAME(d), d->d_name_len);
+				if ((d->d_inode_nr < 0) || (strcmp(D_NAME(d), name_to_search) != 0))
+					continue;
+
+				ret = d->d_inode_nr;
+			}
+
+			if(name_offset != -1) {
+				if(ret < 0)
+					return ret;
+
+				p_in = testfs_get_inode(sb, ret);
+				testfs_put_inode(*dir);
+				(*dir) = p_in;
+
+				free(name_to_search);
+				return testfs_dir_name_to_inode_nr_rec(sb, dir, name + name_offset + 1);
+			}
+			else
+				return ret;
+		}
+	}
+}
+
 /* returns negative value if name is not found */
 /* takes current directory inode and the destination path
  to which we need to cd. returns inode number corresponding
  to the destination path.
  */
-int testfs_dir_name_to_inode_nr(struct inode *dir, char *name) 
-{
-	struct dirent *d;
-	int offset = 0;
-	int ret = -ENOENT;
 
-	assert(dir);
-	assert(name);
-	assert(testfs_inode_get_type(dir) == I_DIR);
-	for (; ret < 0 && (d = testfs_next_dirent(dir, &offset)); free(d)) {
-		//fslice_name(D_NAME(d), d->d_name_len);
-		if ((d->d_inode_nr < 0) || (strcmp(D_NAME(d), name) != 0))
-			continue;
-		ret = d->d_inode_nr;
+int testfs_dir_name_to_inode_nr(struct super_block *sb, struct inode **dir, char *name) {
+	int ret;
+	int current_inode_number = testfs_inode_get_nr(*dir);
+
+	if(name[strlen(name) - 1] == '/' && strcmp(name, "/"))
+		return -EINVAL;
+
+	ret = testfs_dir_name_to_inode_nr_rec(sb, dir, name);
+	if(testfs_inode_get_nr(*dir) != current_inode_number) {
+		testfs_put_inode(*dir);
+		(*dir) = testfs_get_inode(sb, current_inode_number);
 	}
 	return ret;
 }
@@ -359,19 +484,13 @@ int cmd_cd(struct super_block *sb, struct context *c)
 	int inode_nr;
 	struct inode *dir_inode;
 
-	if (c->nargs != 2) {
+	if (c->nargs != 2)
 		return -EINVAL;
-	}
 
-	/* Special case where the specified directory equals to root. */
-	if(!strcmp(c->cmd[1], "/"))
-		inode_nr = 0;
-	else {
-		// get destination directories inode number
-		inode_nr = testfs_dir_name_to_inode_nr(c->cur_dir, c->cmd[1]);
-		if (inode_nr < 0)
-			return inode_nr;
-	}
+	// get destination directories inode number
+	inode_nr = testfs_dir_name_to_inode_nr(sb, &c->cur_dir, c->cmd[1]);
+	if (inode_nr < 0)
+		return inode_nr;
 
 	// get inode from destination directories inode number
 	dir_inode = testfs_get_inode(sb, inode_nr);
@@ -446,27 +565,31 @@ int cmd_ls(struct super_block *sb, struct context *c)
 	struct inode *in;
 	char *cdir = ".";
 
-	if (c->nargs != 1 && c->nargs != 2) {
+	if (c->nargs != 1 && c->nargs != 2)
 		return -EINVAL;
-	}
-	if (c->nargs == 2) {
+
+	if (c->nargs == 2)
 		cdir = c->cmd[1];
-	}
-	assert(c->cur_dir);
+
 	// get inode number of directory path provided in cdir
-	inode_nr = testfs_dir_name_to_inode_nr(c->cur_dir, cdir);
+	assert(c->cur_dir);
+	inode_nr = testfs_dir_name_to_inode_nr(sb, &c->cur_dir, cdir);
 	if (inode_nr < 0)
 		return inode_nr;
+
 	// get the inode corresponding to ls argument
 	in = testfs_get_inode(sb, inode_nr);
+
 	// do ls on inode corresponding to argument
 	// second arg = whether recursive ls or not
 	// testfs_ls(in,1) used for cmd_lsr
 	testfs_ls(in, 0);
+
 	// when we do get inode, the inode gets stored in the hash
 	// table. we need to remove the inode from the hash table
 	// this is why we call testfs_put
 	testfs_put_inode(in);
+
 	return 0;
 }
 
@@ -485,7 +608,7 @@ int cmd_lsr(struct super_block *sb, struct context *c)
 	assert(c->cur_dir);
 	// get inode number from current directory name and 
 	// destination directory name
-	inode_nr = testfs_dir_name_to_inode_nr(c->cur_dir, cdir);
+	inode_nr = testfs_dir_name_to_inode_nr(sb, &c->cur_dir, cdir);
 	if (inode_nr < 0)
 		return inode_nr;
 	// get inode corresponding to the inode number obtained
@@ -509,7 +632,7 @@ int cmd_create(struct super_block *sb, struct context *c)
 	}
 
 	for (i = 1; i < c->nargs; i++) {
-		ret = testfs_create_file_or_dir(sb, c->cur_dir, I_FILE, c->cmd[i]);
+		ret = testfs_create_file_or_dir(sb, c, I_FILE, c->cmd[i]);
 		if(ret < 0)
 			return ret;
 	}
@@ -523,12 +646,12 @@ int cmd_stat(struct super_block *sb, struct context *c)
 	struct inode *in;
 	int i;
 
-	if (c->nargs < 2) {
+	if (c->nargs < 2)
 		return -EINVAL;
-	}
+
 	for (i = 1; i < c->nargs; i++) {
 		// get the inode corresponding to the file/directory argument
-		inode_nr = testfs_dir_name_to_inode_nr(c->cur_dir, c->cmd[i]);
+		inode_nr = testfs_dir_name_to_inode_nr(sb, &c->cur_dir, c->cmd[i]);
 		if (inode_nr < 0)
 			return inode_nr;
 		// get inode / create inode corresponding to the file/directory
@@ -572,5 +695,5 @@ int cmd_mkdir(struct super_block *sb, struct context *c)
 	if (c->nargs != 2) {
 		return -EINVAL;
 	}
-	return testfs_create_file_or_dir(sb, c->cur_dir, I_DIR, c->cmd[1]);
+	return testfs_create_file_or_dir(sb, c, I_DIR, c->cmd[1]);
 }

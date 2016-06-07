@@ -9,7 +9,7 @@ struct dirent {
 #define D_NAME(d) ((char*)(d) + sizeof(struct dirent))
 
 struct dirent *testfs_next_dirent(struct inode *dir, int *offset);
-int testfs_dir_name_to_inode_nr(struct inode *dir, char *name);
+int testfs_dir_name_to_inode_nr(struct super_block *sb, struct inode **dir, char *name);
 int testfs_make_root_dir(struct super_block *sb);
 
 #endif /* _DIR_H */

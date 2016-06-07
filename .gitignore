@@ -5,8 +5,16 @@ llvm/*
 whole-program-llvm/*
 .project
 .cproject
-cscope.out
+*cscope*
 tags
+
+# Post-processing Directories
+visualize/post_processing/backtrace/*
+visualize/post_processing/baseTemplateFunctions/*
+visualize/post_processing/bnum_taint_file
+visualize/post_processing/cksums/*
+visualize/post_processing/prenormalize/*
+visualize/post_processing/templates/*
 
 # Testfs stuff.
 testfs/*.c

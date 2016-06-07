@@ -20,12 +20,28 @@ POINTER_SIZE = 4
 pointerList = collections.defaultdict(list)
 pointerSet = set()
 valueSet = collections.defaultdict(int)
-abstractDataSet = set()
+dataSet = set()
 nameSet = set()
 
 # Block types.
-directory_entry_blocks = dict()
-data_blocks = dict()
+directory_entry_blocks = collections.defaultdict(list)
+data_blocks = set()
+name_bytes_per_block = collections.defaultdict(list)
+data_bytes_per_block = collections.defaultdict(list)
+
+def isDataBlock(block_number):
+    if args.DEBUG:
+        print "[DEBUG, {}]: Checking for data blocks, Block {} contains [{}, {}]".\
+            format(time.time(), block_number,
+                   len(name_bytes_per_block[block_number]),
+                   len(data_bytes_per_block[block_number]))
+
+    if len(name_bytes_per_block[block_number]) > 0:
+        return False
+    elif len(data_bytes_per_block[block_number]) > 0:
+        return True
+    else:
+        return False
 
 
 class Base(object):
@@ -214,11 +230,11 @@ class B(Base):
 
             if val.parent.getByte(val.byte).parent.getName() == 'N':
                 nameSet.add((self.nr * self.size) + byte)
-                directory_entry_blocks[self.nr] = self
-                self.name_bytes += 1
+                directory_entry_blocks[self.nr].append(self)
+                name_bytes_per_block[self.nr].append(byte)
             else:
-                abstractDataSet.add((self.nr * self.size) + byte)
-                self.data_bytes += 1
+                dataSet.add((self.nr * self.size) + byte)
+                data_bytes_per_block[self.nr].append(byte)
         else:
             if args.DEBUG:
                 print "[DEBUG, {}]: Ignoring type {} in a block's assignment operator.".\
@@ -238,14 +254,6 @@ class B(Base):
             print "[DEBUG, {}]: Byte {} was marked as part of a pointer.".format(time.time(), disk_offset)
             print "[DEBUG, {}]: Byte {} in block {} with taintID {} points to block {}".\
                 format(time.time(), byte, self.nr, self.taintID, block_number)
-
-    def isDataBlock(self):
-        if self.name_bytes > 0:
-            return False
-        elif self.data_bytes > 0:
-            return True
-        else:
-            return False
 
     def Print(self, next, edges):
         print "{} [rank=max fillcolor=grey style=filled label=\"{{{{{}}}|{{<size>size = {} | <nr>nr = {} | <tid>tid = {}}}}}\"];" \
@@ -325,10 +333,9 @@ def PrintBlocks():
         blocks[b.nr].append(b)
 
     if args.PRINT_METADATA:
-        for nr, block_list in blocks.items():
-            for block in block_list:
-                if block.isDataBlock():
-                    data_blocks[nr] = block
+        for nr in blocks.keys():
+            if isDataBlock(nr):
+                data_blocks.add(nr)
 
         # print(pointerList)
         total_pointers = len(pointerSet)
@@ -346,10 +353,12 @@ def PrintBlocks():
         if args.VERBOSE:
             # print "PointerSet: {}".format(sorted(pointerSet))
             print "NameSet: {}".format(nameSet)
-            print "AbstractSet: {}".format(abstractDataSet)
+            print "DataSet: {}".format(dataSet)
             print "ValueSet: {}".format(valueSet)
+            print "DataSet per Block: {}".format(data_bytes_per_block)
+            print "DEntrySet per Block".format(name_bytes_per_block)
             print "Blocks with directory entries: {}".format(sorted(directory_entry_blocks.keys()))
-            print "Datablocks: {}".format(sorted(data_blocks.keys()))
+            print "Datablocks: {}".format(sorted(data_blocks))
             print "{}".format(sorted(pointerSet))
 
         sys.exit(0)
@@ -372,6 +381,7 @@ def PrintBlocks():
             seen.add(b)  # Mark block as "seen".
             b.Print(nodes, edges)
             b.PrintByteSources(nodes, edges)
+
         if 1 < len(bs):
             print "}"
 
