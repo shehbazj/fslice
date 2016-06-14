@@ -250,6 +250,13 @@ extern "C" void *__fslice_memmove(void *dst, const void *src, uint64_t size) {
 
   const auto daddr = reinterpret_cast<uint64_t>(dst);
   const auto saddr = reinterpret_cast<uint64_t>(src);
+  const auto bt = gShadow[saddr];
+	if(bt.id == 0){
+		std::cerr << "#XXX Assigning new Taint" << std::endl;
+		auto newTaint = gId++;
+		for(auto i=0U;i < size; i++)
+			gShadow[saddr + i] = {newTaint, i, false};
+	}
   for (auto i = 0U; i < size; ++i) {
     const auto bt = gShadow[saddr + i];
     gShadow[daddr + i] = {bt.id, bt.offset, false};
@@ -356,7 +363,7 @@ extern "C" Taint __fslice_op2(const char *op, Taint t1, Taint t2) {
 // Only in GetBlock does the tainting of actual data blocks happen.
 
 
-static Taint GetBlock(uint64_t size, uint64_t nr) {
+static Taint GetBlock(uint64_t size, uint64_t nr, char path) {
 	Taint t = { 0, 0, false};
 #if BLOCKS_CACHE
 	t = gBlocks[nr];
@@ -369,7 +376,7 @@ static Taint GetBlock(uint64_t size, uint64_t nr) {
 		const auto nt = __fslice_load_arg(2);  // Taint for the block number :-)
 		std::cerr << "t" << t.id << "=B(" << size << "," << nr << ",t" << st.id
 				<< ",t" << nt.id << ", " << t.id << ") # GetBlock(" << size
-				<< ", " << nr << ")" << std::endl;
+				<< ", " << nr << ") " << path << std::endl;
 		__fslice_store_ret( { 0, 0, false});
 	} else {
 		std::cerr << "# Block " << nr << " is already tainted as: t" << t.id
@@ -392,7 +399,7 @@ extern "C" void __fslice_read_block(uint64_t addr, uint64_t size, uint64_t nr) {
   std::cerr << "# Invoking __fslice_read_block(" << addr << ", " << size
 		    << ", " << nr << ")\n";
 
-  auto t = GetBlock(size, nr);
+  auto t = GetBlock(size, nr, 'r');
   for (auto i = 0U; i < size; ++i) {
 //    gShadow[addr + i] = {t.id, i, false, (nr *size) + i};
     gShadow[addr + i] = {t.id, i, false};
@@ -413,7 +420,7 @@ extern "C" void __fslice_write_block(uint64_t addr, uint64_t size, uint64_t nr) 
   std::cerr << "# Invoking __fslice_write_block(" << addr << ", " << size << ", " << nr
 			<< ")\n";
 
-  auto t = GetBlock(size, nr);
+  auto t = GetBlock(size, nr, 'w');
   for (auto i = 0UL; i < size; ++i) {
     const auto bt = gShadow[addr + i];
     if (!bt.id || (t.id == bt.id && i == bt.offset)) {
