@@ -250,15 +250,33 @@ extern "C" void *__fslice_memmove(void *dst, const void *src, uint64_t size) {
 
   const auto daddr = reinterpret_cast<uint64_t>(dst);
   const auto saddr = reinterpret_cast<uint64_t>(src);
-  const auto bt = gShadow[saddr];
-	if(bt.id == 0){
-		std::cerr << "#XXX Assigning new Taint" << std::endl;
-		auto newTaint = gId++;
-		for(auto i=0U;i < size; i++)
-			gShadow[saddr + i] = {newTaint, i, false};
-	}
+  unsigned newTaint = 0;
+	for(auto i=0U; i < size; i++){
+  	const auto bt = gShadow[saddr+i];
+		// if any of the source bytes are not tainted, reassign new taint
+		// to all bytes
+		if(bt.id == 0){
+			std::cerr << "#XXX Assigning new Taint" << std::endl;
+			newTaint = gId++;
+			for (auto j=0U; j < size; j++) {
+				gShadow[saddr + j] = {newTaint, j, false};
+			}
+		}
+		if(newTaint!=0)
+		break;
+        }
+// S is a statically assigned memory region - a constant string or a stack allocated memory (local variable)
+	if(newTaint !=0)
+  std::cerr << "t" << newTaint << "=S(" << size << ", " << newTaint << ")" << std::endl;
+
   for (auto i = 0U; i < size; ++i) {
     const auto bt = gShadow[saddr + i];
+	if(gShadow[daddr +i].id != 0){
+    		std::cerr << "t" << gShadow[daddr + i].id << "[" << i << "]=t" << bt.id << "["
+			  << bt.offset << "] # fslice_memmove" << std::endl;
+	}else{
+		std::cerr << "# XXX Destination address taint Id is 0" << std::endl;
+	}
     gShadow[daddr + i] = {bt.id, bt.offset, false};
   }
   std::cerr << "#DSTRUCT:"<< "t" << gShadow[daddr].id << "," <<gShadow[daddr].offset << ":Size|" << size << std::endl;
