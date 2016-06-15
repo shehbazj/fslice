@@ -19,7 +19,7 @@ blockContents = defaultdict(list)
 def evaluateWritePath(traceFile,writeTaint, prevReadTaint,blockNumber):
 	global blockContents 
 	if blockNumber not in blockContents:
-		blockContents[blockNumber] = ['U'] * 64
+		blockContents[int(blockNumber)] = ['U'] * 64
 	with open(traceFile, 'r') as f:
 		input_lines = f.readlines()
 #		print writeTaint
@@ -30,11 +30,11 @@ def evaluateWritePath(traceFile,writeTaint, prevReadTaint,blockNumber):
 				leftTaint = line.split('=')[0].split('[')[0]
 				rightTaint = line.split('=')[1].split('[')[0]
 				if rightTaint == 't1': # assiging zero 
-					blockContents[blockNumber][int(offset)] = 'Z'
+					blockContents[int(blockNumber)][int(offset)] = 'Z'
 				elif prevReadTaint == None:
-					blockContents[blockNumber][int(offset)] = 'A'
+					blockContents[int(blockNumber)][int(offset)] = 'A'
 				elif rightTaint != prevReadTaint:
-					blockContents[blockNumber][int(offset)] = 'A'
+					blockContents[int(blockNumber)][int(offset)] = 'A'
 
 # start from last content byte. eliminate all 'Z' marked bytes from the contents List
 # if there are non trailing bytes marked 'Z', mark them as allocated.
@@ -70,7 +70,7 @@ def evaluateReadPath(traceFile,readTaint,blockNumber):
 				for items in TaintAndOffsetList:
 					offsetList.extend(re.findall('\[(\d+)\]',items))
 				for offset in offsetList:
-					blockContents[blockNumber][int(offset)] = 'A'				
+					blockContents[int(blockNumber)][int(offset)] = 'A'				
 
 # returns a map of Block == > {Contents}. where contents are either 'U' or 'A' depending
 # on whether the offset is unallocated or allocated respectively.
@@ -93,7 +93,7 @@ def getAllocatedBytes(traceFile):
 		taint = re.findall(r'(t\d+)=',blockLine)
 		readOrWrite = re.findall(r'\ (r|w)',blockLine)
 #		print taint, blockNum, readOrWrite
-		blockTaintDict[blockNum[0]].append(taint[0]+'.'+readOrWrite[0])
+		blockTaintDict[int(blockNum[0])].append(taint[0]+'.'+readOrWrite[0])
 #		print blockNum.group()
 #		blockTaintDict[]
 	
@@ -115,15 +115,15 @@ def getAllocatedBytes(traceFile):
 				readTaint = taint.split('.')[0]
 				evaluateReadPath(traceFile,readTaint,blockNumber)
 
-	for blockNumber in blockTaintDict:
-		print blockNumber,blockContents[blockNumber].count('A')
+#	for blockNumber in blockTaintDict:
+#		print blockNumber,blockContents[blockNumber].count('A')
 
 	return blockContents
-
-if __name__ == "__main__":
-	""" Main Start """
-
-       	parser = argparse.ArgumentParser()
-       	parser.add_argument('trace_file', type=str, help="The path to the trace file.")
-       	args = parser.parse_args()
-	blockContents = getAllocatedBytes(args.trace_file)
+#
+#if __name__ == "__main__":
+#	""" Main Start """
+#
+#       	parser = argparse.ArgumentParser()
+#       	parser.add_argument('trace_file', type=str, help="The path to the trace file.")
+#       	args = parser.parse_args()
+#	blockContents = getAllocatedBytes(args.trace_file)

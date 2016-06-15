@@ -4,6 +4,9 @@ import re
 #if __name__ == "__main__":
 #    """ Main Start """
 
+# for a given destination block taint Value, returns the source block and the offset
+# list of the source block that was pointing to the destination block
+
 def returnBlockNoAndOffset(taint_val,trace_file):
 	with open(trace_file, 'r') as f:
 		relevant_lines = []
