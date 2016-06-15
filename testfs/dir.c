@@ -23,18 +23,35 @@ testfs_next_dirent(struct inode *dir, int *offset)
 
 	assert(dir);
 	assert(testfs_inode_get_type(dir) == I_DIR);
+
 	// check size of the directory with offset
 	if (*offset >= testfs_inode_get_size(dir))
 		return NULL;
+
+	/* Make sure a struct dirent entry does not span multiple blocks. */
+	if((((*offset) + sizeof(struct dirent)) / BLOCK_SIZE) > ((*offset) / BLOCK_SIZE))
+		(*offset) = (((*offset) + sizeof(struct dirent)) / BLOCK_SIZE) * BLOCK_SIZE;
+
 	// read data from dir into buffer "d" at offset-offset of size struct dirent
 	// dirent contains inode number and name length value
 	ret = testfs_read_data(dir, *offset, (char *) &d, sizeof(struct dirent));
 	if (ret < 0)
 		return NULL;
-	assert(d.d_name_len > 0);
+
+	// assert(d.d_name_len > 0);
+	if(d.d_name_len == 0) {
+		/* The next entry is located inside the next block allocated for this directory. */
+		(*offset) = (((*offset) / BLOCK_SIZE) + 1) * BLOCK_SIZE;
+
+		ret = testfs_read_data(dir, *offset, (char *) &d, sizeof(struct dirent));
+		if (ret < 0)
+			return NULL;
+	}
+
 	dp = malloc(sizeof(struct dirent) + d.d_name_len);
 	if (!dp)
 		return NULL;
+
 	*dp = d;
 	// increment offset as we have already read dirent
 	*offset += sizeof(struct dirent);
@@ -61,6 +78,7 @@ testfs_find_dirent(struct inode *dir, int inode_nr)
 	assert(dir);
 	assert(testfs_inode_get_type(dir) == I_DIR);
 	assert(inode_nr >= 0);
+
 	// go in a linear order searching from current directories inode
 	// to all other inodes by comparing inode numbers
 	// after every iteration, the offset is updated to the next dirent
@@ -86,16 +104,39 @@ static int testfs_write_dirent(struct inode *dir, char *name, int len,
 		int inode_nr, int offset) 
 {
 	int ret;
-	struct dirent *d = malloc(sizeof(struct dirent) + len);
-
+	int total_bytes = sizeof(struct dirent) + len;
+	struct dirent *d = malloc(total_bytes);
 	if (!d)
 		return -ENOMEM;
+
 	assert(inode_nr >= 0);
 	d->d_name_len = len;
 	d->d_inode_nr = inode_nr;
 	_strcpy(D_NAME(d), name);
-	ret = testfs_write_data(dir, offset, (char *) d,
-			sizeof(struct dirent) + len);
+
+	/* Make sure a struct dirent entry does not span multiple blocks. In case the new dirent
+	 * does not fit inside the current block, we fill the current block with zeroes and update
+	 * the offset to point at the next available offset. */
+	if(((offset + total_bytes) / BLOCK_SIZE) > (offset / BLOCK_SIZE)) {
+		int next_offset = ((offset + total_bytes) / BLOCK_SIZE) * BLOCK_SIZE;
+		int total = next_offset - offset;
+		char *buf = malloc(total);
+
+		if(!buf)
+			return -ENOMEM;
+
+		memset(buf, 0, total);
+		ret = testfs_write_data(dir, offset, buf, total);
+		free(buf);
+
+		if(ret < 0)
+			return ret;
+
+		/* Update the current offset. */
+		offset = next_offset;
+	}
+
+	ret = testfs_write_data(dir, offset, (char *) d, total_bytes);
 	free(d);
 	return ret;
 }
@@ -129,18 +170,22 @@ static int testfs_add_dirent(struct inode *dir, char *name, int inode_nr)
 		if ((d = testfs_next_dirent(dir, &offset)) == NULL)
 			// reached last directory/file in the inode
 			break;
+
 		if ((d->d_inode_nr >= 0) && (strcmp(D_NAME(d), name) == 0)) {
 			// d->d_inode_nr >=0 means we found an inode 
 			// strcmp ==0 means the file or directory already exists
 			ret = -EEXIST;
 			continue;
 		}
+
 		if ((d->d_inode_nr >= 0) || (d->d_name_len != len))
 			continue;
+
 		found = 1;
 	}
 	if (ret < 0)
 		return ret;
+
 	assert(found || (p_offset == testfs_inode_get_size(dir)));
 	// writes directory information to file dir. enters name, length
 	// p_offset contains the offset where to write (usually at the end)
@@ -160,14 +205,16 @@ static int testfs_remove_dirent_allowed(struct super_block *sb, int inode_nr)
 	struct dirent *d;
 	int ret = 0;
 
-	// get inode will retrive the inode from memory (hash table)
+	// get inode will retrieve the inode from memory (hash table)
 	// increment the reference count. If the in memory inode does 
 	// not already exist, it will create a new one.
 	dir = testfs_get_inode(sb, inode_nr);
+
 	// if it is only a file that you need to delete, remove the
 	// in-memory inode
 	if (testfs_inode_get_type(dir) != I_DIR)
 		goto out;
+
 	// iterate through the directory entries; if there is any entry
 	// other than . or .., or with d_inode_nr < 0, return that there
 	// exists some directory inside the directory (return -ENOEMPTY)
@@ -177,6 +224,7 @@ static int testfs_remove_dirent_allowed(struct super_block *sb, int inode_nr)
 			continue;
 		ret = -ENOTEMPTY;
 	}
+
 	out:
 	// decrement inode count by 1, remove from hash.
 	testfs_put_inode(dir);
@@ -208,6 +256,7 @@ static int testfs_remove_dirent(struct super_block *sb, struct inode *dir, char 
 		// with -ENOENT error
 		if ((d = testfs_next_dirent(dir, &offset)) == NULL)
 			break;
+
 		//fslice_name(D_NAME(d), d->d_name_len);
 		// XXX in what scenario will d_inode_nr be 0?
 		// if we read a valid directory entry, and it does
@@ -215,17 +264,19 @@ static int testfs_remove_dirent(struct super_block *sb, struct inode *dir, char 
 		// for, continue.
 		if ((d->d_inode_nr < 0) || (strcmp(D_NAME(d), name) != 0))
 			continue;
+
 		/* found the dirent */
 		inode_nr = d->d_inode_nr;
+
 		// check if there are no children directories or subdirectories
 		// in the directory to delete. also, remove the inode from
 		// hash table, and delete the in memory inode
 		if ((ret = testfs_remove_dirent_allowed(sb, inode_nr)) < 0)
 			continue; /* this will break out of the loop */
+
 		// set inode_nr to -1
 		d->d_inode_nr = -1;
-		ret = testfs_write_data(dir, p_offset, (char *) d,
-				sizeof(struct dirent) + d->d_name_len);
+		ret = testfs_write_data(dir, p_offset, (char *) d, sizeof(struct dirent) + d->d_name_len);
 		if (ret >= 0)
 			ret = inode_nr;
 	}
@@ -240,6 +291,7 @@ static int testfs_create_empty_dir(struct super_block *sb, int p_inode_nr, struc
 	ret = testfs_add_dirent(cdir, ".", testfs_inode_get_nr(cdir));
 	if (ret < 0)
 		return ret;
+
 	ret = testfs_add_dirent(cdir, "..", p_inode_nr);
 	if (ret < 0) {
 		testfs_remove_dirent(sb, cdir, ".");
@@ -297,6 +349,11 @@ static int testfs_create_file_or_dir(struct super_block *sb, struct context *c, 
 			name_to_create = name + name_offset + 1;
 		}
 	}
+
+	/* Make sure that the specified name does not exceed the size of one block. */
+	if(name_to_create != NULL)
+		if(strlen(name_to_create) + 1 > BLOCK_SIZE - sizeof(struct dirent))
+			return -EINVAL;
 
 	testfs_tx_start(sb, TX_CREATE);
 	if (c) {
@@ -402,6 +459,7 @@ int testfs_dir_name_to_inode_nr_rec(struct super_block *sb, struct inode **dir, 
 		return 0;
 	}
 	else {
+		/* Search if the contains a path. */
 		for(i = 0; i < strlen(name); ++i) {
 			if(name[i] == '/') {
 				name_offset = i;
@@ -410,6 +468,8 @@ int testfs_dir_name_to_inode_nr_rec(struct super_block *sb, struct inode **dir, 
 		}
 
 		if(name_offset == 0) {
+			/* The specified path is absolute. After fetching the inode associated
+			 * with the root directory, the function proceeds recursively. */
 			p_in = testfs_get_inode(sb, 0);
 			testfs_put_inode(*dir);
 			(*dir) = p_in;
@@ -417,9 +477,13 @@ int testfs_dir_name_to_inode_nr_rec(struct super_block *sb, struct inode **dir, 
 			return testfs_dir_name_to_inode_nr_rec(sb, dir, name + 1);
 		}
 		else if(name_offset == (strlen(name) - 1))
+			/* No entry name is terminated with the '/' character. */
 			return ret;
 		else {
 			if(name_offset != -1) {
+				/* The specified name represents a relative path; thus, the name of the
+				 * first entry must be extracted. Otherwise, by default, the name to search
+				 * for is equal to the specified name. */
 				entry_name = malloc(name_offset + 1);
 				if (!entry_name)
 					return -ENOMEM;
@@ -437,9 +501,12 @@ int testfs_dir_name_to_inode_nr_rec(struct super_block *sb, struct inode **dir, 
 			}
 
 			if(name_offset != -1) {
+				/* The specified name represents a relative path; the function continues
+				 * its recursion. */
 				if(ret < 0)
 					return ret;
 
+				/* Replace the old inode with the newly read one. */
 				p_in = testfs_get_inode(sb, ret);
 				testfs_put_inode(*dir);
 				(*dir) = p_in;
@@ -447,8 +514,10 @@ int testfs_dir_name_to_inode_nr_rec(struct super_block *sb, struct inode **dir, 
 				free(name_to_search);
 				return testfs_dir_name_to_inode_nr_rec(sb, dir, name + name_offset + 1);
 			}
-			else
+			else {
+				/* The specified name does not contain any paths. */
 				return ret;
+			}
 		}
 	}
 }
@@ -503,9 +572,11 @@ int cmd_cd(struct super_block *sb, struct context *c)
 		testfs_put_inode(dir_inode);
 		return -ENOTDIR;
 	}
+
 	// same as the destination inode, do not retain original
 	// current directory after use.
 	testfs_put_inode(c->cur_dir);
+
 	// change cur_dir to new destination inode.
 	c->cur_dir = dir_inode;
 	return 0;
@@ -526,6 +597,7 @@ static int testfs_ls(struct inode *in, int recursive)
 {
 	int offset = 0;
 	struct dirent *d;
+
 	// d gets the dirent stored in the inode.
 	// a inode for a directory contains entries for all the constituent
 	// directories and files. the directories have the structure dirent+dirname
@@ -543,12 +615,13 @@ static int testfs_ls(struct inode *in, int recursive)
 
 		if (d->d_inode_nr < 0)
 			continue;
+
 		cin = testfs_get_inode(testfs_inode_get_sb(in), d->d_inode_nr);
 		// name of a file is also located on the inode
 		// D_NAME will print name of the file or the directory
 		// depending on the inode type
-		printf("%s%s\n", D_NAME(d),
-				(testfs_inode_get_type(cin) == I_DIR) ? "/" : "");
+		printf("%s%s\n", D_NAME(d), (testfs_inode_get_type(cin) == I_DIR) ? "/" : "");
+
 		if (recursive && testfs_inode_get_type(cin) == I_DIR
 				&& (strcmp(D_NAME(d), ".") != 0)
 				&& (strcmp(D_NAME(d), "..") != 0)) {
@@ -599,23 +672,27 @@ int cmd_lsr(struct super_block *sb, struct context *c)
 	struct inode *in;
 	char *cdir = ".";
 
-	if (c->nargs != 1 && c->nargs != 2) {
+	if (c->nargs != 1 && c->nargs != 2)
 		return -EINVAL;
-	}
-	if (c->nargs == 2) {
+
+	if (c->nargs == 2)
 		cdir = c->cmd[1];
-	}
+
 	assert(c->cur_dir);
+
 	// get inode number from current directory name and 
 	// destination directory name
 	inode_nr = testfs_dir_name_to_inode_nr(sb, &c->cur_dir, cdir);
 	if (inode_nr < 0)
 		return inode_nr;
+
 	// get inode corresponding to the inode number obtained
 	// above.
 	in = testfs_get_inode(sb, inode_nr);
+
 	// you now have inode of destination, so do recursive ls. 
 	testfs_ls(in, 1);
+
 	// empty inode from hash table. it was inserted when you 
 	// did get inode earlier.
 	testfs_put_inode(in);
@@ -654,6 +731,7 @@ int cmd_stat(struct super_block *sb, struct context *c)
 		inode_nr = testfs_dir_name_to_inode_nr(sb, &c->cur_dir, c->cmd[i]);
 		if (inode_nr < 0)
 			return inode_nr;
+
 		// get inode / create inode corresponding to the file/directory
 		// argument
 		in = testfs_get_inode(sb, inode_nr);
@@ -670,9 +748,9 @@ int cmd_rm(struct super_block *sb, struct context *c)
 	int inode_nr;
 	struct inode *in;
 
-	if (c->nargs != 2) {
+	if (c->nargs != 2)
 		return -EINVAL;
-	}
+
 	testfs_tx_start(sb, TX_RM);
 	// check if dir entry can be removed or not.
 	// also set the inode number to -1
