@@ -4,8 +4,7 @@
 #include "tx.h"
 #include "fslice.h"
 
-int cmd_cat(struct super_block *sb, struct context *c) 
-{
+int cmd_cat(struct super_block *sb, struct context *c) {
 	char *buf;
 	int inode_nr;
 	struct inode *in;
@@ -44,12 +43,10 @@ int cmd_cat(struct super_block *sb, struct context *c)
 	return ret;
 }
 
-int cmd_catr(struct super_block *sb, struct context *c) 
-{
+int cmd_catr(struct super_block *sb, struct context *c) {
 	char *cdir = ".";
 	int inode_nr;
-	struct inode *in;
-	struct inode *tmp_inode;
+	struct inode *in, *tmp_inode;
 	int offset = 0;
 	struct dirent *d;
 	int ret = 0;
@@ -120,8 +117,7 @@ int cmd_catr(struct super_block *sb, struct context *c)
 	return 0;
 }
 
-int cmd_write(struct super_block *sb, struct context *c) 
-{
+int cmd_write(struct super_block *sb, struct context *c) {
 	int inode_nr;
 	struct inode *in;
 	int size;
@@ -156,8 +152,7 @@ int cmd_write(struct super_block *sb, struct context *c)
 	return ret;
 }
 
-int cmd_owrite(struct super_block *sb, struct context *c) 
-{
+int cmd_owrite(struct super_block *sb, struct context *c) {
 	int inode_nr;
 	struct inode *in;
 	int size;

@@ -8,10 +8,8 @@ static char zero[BLOCK_SIZE] = { 0 };
  * write buffer blocks to disk.
  */
 
-void
-write_blocks(struct super_block *sb, char *blocks, int start, int nr)
-{
-        long pos;
+void write_blocks(struct super_block *sb, char *blocks, int start, int nr) {
+	long pos;
 
 	if ((pos = ftell(sb->dev)) < 0) {
 		EXIT("ftell");
@@ -30,10 +28,8 @@ write_blocks(struct super_block *sb, char *blocks, int start, int nr)
 	}
 }
 
-void
-zero_blocks(struct super_block *sb, int start, int nr)
-{
-        int i;
+void zero_blocks(struct super_block *sb, int start, int nr) {
+	int i;
 
 	for (i = 0; i < nr; i++) {
 		write_blocks(sb, zero, start + i, 1);
@@ -46,10 +42,8 @@ zero_blocks(struct super_block *sb, int start, int nr)
  you need sb only for the device handle name, stored in sb->dev
  */
 
-void
-read_blocks(struct super_block *sb, char *blocks, int start, int nr)
-{
-        long pos;
+void read_blocks(struct super_block *sb, char *blocks, int start, int nr) {
+	long pos;
 
 	if ((pos = ftell(sb->dev)) < 0) {
 		EXIT("ftell");
