@@ -133,6 +133,7 @@ void testfs_write_super_block(struct super_block *sb) {
 	char block[BLOCK_SIZE] = { 0 };
 
 	assert(sizeof(struct dsuper_block) <= BLOCK_SIZE);
+	sb->sb.modification_time = time(NULL);
 	_memcpy(block, &sb->sb, sizeof(struct dsuper_block));
 	write_blocks(sb, block, 0, 1);
 }

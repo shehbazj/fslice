@@ -2,6 +2,7 @@
 #define _SUPER_H
 
 #include <stdio.h>
+#include <time.h>
 #include "tx.h"
 
 struct dsuper_block {
@@ -10,8 +11,8 @@ struct dsuper_block {
         int csum_table_start;   
         int inode_blocks_start;
         int data_blocks_start;
-        int modification_time;
-};
+        time_t modification_time;
+} __attribute__((packed));
 
 struct super_block {
         struct dsuper_block sb;
