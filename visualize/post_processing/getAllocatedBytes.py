@@ -35,9 +35,6 @@ def evaluateWritePath(traceFile, writeTaint, prevReadTaint, blockNumber, zeroCon
                 leftTaint = line.split('=')[0].split('[')[0]
                 rightTaint = line.split('=')[1].split('[')[0]
 
-                if blockNumber == '192':
-                    print(offset, leftTaint, rightTaint)
-
                 if rightTaint == zeroConstantTaint: # assigning zero
                     blockContents[blockNumber][offset] = 'Z'
                 elif prevReadTaint is None:
@@ -56,7 +53,7 @@ def removePadding():
     for block,contentList in blockContents.items():
         content = BLOCK_SIZE - 1
         padding = True
-        # if blockContents[block][content] == 'Z':
+
         while blockContents[block][content] == 'Z' and content >= 0:
             if padding and blockContents[block][content] == 'Z':
                 blockContents[block][content] = 'U'
