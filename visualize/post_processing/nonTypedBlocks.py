@@ -33,6 +33,12 @@ blockDPMap = defaultdict(list)
 # blockDSMap - map from block number to the internal basic structure
 blockDSMap = defaultdict(map)
 
+# blockPTMap - map from block Number to Partial Type
+# for rules on partial Typing, see createPartialTypes()
+blockPTMap = {}
+
+PTCount = 0
+
 def usage():
 	print "usage ./nonTypedBlocks.py operations blockTaints TaintBlockFile"
 	sys.exit()
@@ -306,6 +312,127 @@ def scanMap(sourceBlockList,Map):
 	print "nextLevelList",nextLevelList
 	return sorted(set(nextLevelList))	
 
+# Helper function for getPartialType()
+# matches b1 and b2 contents after discarding 'U'
+
+def matchWithoutUnallocatedBytes(block1 , block2):
+	global blockAllocatedContents
+	if len(blockAllocatedContents[block1]) != len(blockAllocatedContents[block2]):
+		return False
+	for i in range(len(block1)):
+		if blockAllocatedContents[block1][i] == 'U' or \
+			 blockAllocatedContents[block2][i] == 'U':
+			continue
+		if blockAllocatedContents[block1][i] != blockAllocatedContents[block2][i]:
+			return False
+	return True
+
+# Helper function for getPartialType()
+# isSubStructure(block1, block2) checks if block1 can be obtained from
+# block2 repeated multiple times.
+
+def isSubStructure(block1, block2):
+	global blockAllocatedContents
+	b1length = len(blockAllocatedContents[block1])
+	b2length = len(blockAllocatedContents[block2])
+	
+	if b1length % b2length == 0:
+		numSubStructures = b1length / b2length
+		smallerStructure = blockAllocatedContents[block2]
+		largerStructure = blockAllocatedContents[block1]
+	elif b2length % b1length == 0:
+		numSubStructures = b2length / b1length
+		smallerStructure = blockAllocatedContents[block1]
+		largerStructure = blockAllocatedContents[block2]
+	else:
+		return False
+	
+	if smallerStructure * numSubStructures == largerStructure:
+		return True
+	else:
+		return False
+
+
+# Helper function for getPartialTypes()
+# checks if type exists for a block, if not, creates new type, assigns it
+# to a block, and returns the type back to caller
+# 
+
+def assignType(block):
+	global blockPTMap
+	global PTCount
+	if block in blockPTMap: # if type label already exists
+		return blockPTMap[block]
+	else:			# if new type label has to be generated
+		PTCount += 1
+		blockPTMap[block] = PTCount
+		return PTCount
+
+
+# Helper function for createPartialTypes()
+# checks matching rules and returns type
+
+def getPartialType(blockToBeTyped):
+	global blockAllocatedContents
+	global blockPTMap
+	global PTCount 
+	for block, contents in blockAllocatedContents.items():
+		if blockToBeTyped in blockPTMap: # block already has a partial Type
+			return blockPTMap[blockToBeTyped]
+
+		if block == blockToBeTyped:	
+			# skip self
+			continue
+
+		if blockAllocatedContents[block] == blockAllocatedContents[blockToBeTyped]:
+			# exact match
+			return assignType(block)
+			
+		if set(blockAllocatedContents[block]) < set(blockAllocatedContents[blockToBeTyped]) or \
+		set(blockAllocatedContents[blockToBeTyped]) < set(blockAllocatedContents[block]):
+			# check for subStructure
+			if isSubStructure(block, blockToBeTyped) == True:
+				return assignType(block)
+	
+		if blockAllocatedContents[block].count('U') !=0 or \
+			blockAllocatedContents[blockToBeTyped].count('U') !=0:
+			# check if there is a match after discarding unallocated bytes
+			if matchWithoutUnallocatedBytes(block, blockToBeTyped) == True:
+				return assignType(block)
+	
+		# no match, create and return new Type
+		PTCount += 1
+		return PTCount	
+
+# from a blockDSMap, create partial types, i.e. cluster blocks based on
+# information of bytes - wheather they are 'D', 'P' or 'U' (data, pointer
+# or unallocated).
+
+# RULE SET:
+# 1)	if there are only 'P' in a DS Map, group them with other 'P*' blocks
+# 2)	if there are only 'D' in a DS Map, group them with other 'D*' blocks
+# 3)	if there is an exact match between Data Structures, group them together
+# 4)	if a block is a subset of another block, group them together
+# 5)	if a block contains unallocated bytes, we first mark them as 'P', and 
+# 	see if the block matches any other block. Next, try marking 'U' as 'D'
+# 	and match the blocks.
+# 6)	if none of the above rules match, create new partialType entry
+
+
+def createPartialTypes():
+	global blockAllocatedContents
+	global blockPTMap
+	
+	for block, contents in blockAllocatedContents.items():
+		pointerCount = contents.count('P')
+		unknownCount = contents.count('U')
+		dataCount = contents.count('D')
+		if pointerCount == 0 and unknownCount == 0: # all Data
+			blockDSMap[block] = ['D*']
+		if dataCount == 0 and unknownCount == 0: # all pointer
+			blockDSMap[block] = ['P*']
+		blockPTMap[block] = getPartialType(block)
+		
 
 # if all destination blocks of source block list are typed, type the source
 # block list as well. Return list of blocks that were not typed. These will
@@ -353,15 +480,15 @@ def getBlockAndOffset(k):
 		intOffsetList.append(int(offset))
 	return (blockNum, intOffsetList)		
 
-# Input - list of blockContents {U,P...} of block Size
-# Output - List of all ptr Indexes - { 20, 44 } or empty List for 
-# data blocks
+# Input - list of blockContents {D,P, U...} of block Size
+# Output - List of all ptr Indexes - For blockContents as { DDDDPPDDDDPP }
+# the pointer index list is {4,10}
 
 def getPtrIndex(blockContents):
 	ptrList = []
 	index = 0
 	while index < blockSize:
-		if blockContents[index] is 'U':
+		if blockContents[index] is 'U' or blockContents[index] is 'D':
 			index+=1
 			continue
 		if blockContents[index] is 'P':
@@ -370,8 +497,8 @@ def getPtrIndex(blockContents):
 				index+=1
 	return ptrList
 
-# checks if 'U' or 'P' element in blockContents is variable. if the element
-# is constant, return the size of 'U' or 'P' field (i.e. number of consequitive
+# checks if 'D' or 'P' element in blockContents is variable. if the element
+# is constant, return the size of 'D' or 'P' field (i.e. number of consequitive
 # bytes). If element is variable, return -1.
 
 def elementIsVariable(element, blockContents):
@@ -398,24 +525,23 @@ def elementIsVariable(element, blockContents):
 			
 # helper Function for createBlockDSMap
 # if number of pointers for all pointer clusters in a block
-# are same, variable type is the 'U' unknown field.
-# if unknown fields are of constant size. If yes, 'U' is
-# constant.
-# else, both U and P are variable.
+# are same, variable type is the 'D' the data field.
+# if data field is constant, 'D' is constant and 'P' may be variable
+# else, both D and P are variable.
 
 # The last category might be a constant pointer field - with 
 # pointer bytes uninitialized. Detecting a struct with uninitialized
 # pointer fields as a constant sized field is not possible because
-# we cannot differentiate between non-pointer fields and unallocated 
+# we cannot know whether unallocated bytes are data or
 # pointer fields.
 
 def generateVariableStruct(blockContents):
         structure = []
-        element = blockContents[0] # can be 'U' or 'P'
+        element = blockContents[0] # can be 'D' or 'P'
         count = elementIsVariable(element,blockContents)
         index = 0
         if count > 0: # element has constant size
-                structure = elements * [count]
+                structure = [element] * count
                 index = count # scan from next element
         else:  # variable list
                 structure.append(element + '*')
@@ -432,17 +558,13 @@ def generateVariableStruct(blockContents):
         return structure
 
 # create basic datastructures inside every block. 
-# mapping: { blockNumber => { U,U,U,U, P,P,P,P }
+# mapping: { blockNumber => { D,D,D,D,P,P,P,P }
 # this represents the basic struct inside the block. We obtain the size of 
 # a structure by finding the difference between start of two pointer clusters 
-# within a block. We use pointers and _not_ 'U' or Unknowns, because we do not
-# know if U is allocated pure data byte, or an unallocated data byte (such as
-# a data inode structures pointer field, where if only 2 data pointers are allocated.
-# the other 2 out of total 4 pointer fields are marked 'U'. It does not mean that
-# this field is data, just means that it could be allocated data byte, or a pointer byte.
-# or an  unallocated pointer byte.
+# within a block.
 # A basic structure of a block may contain multiple pointer fields. In this case, we 
 # re-create the structure when we look at destination blocks of pointer fields.
+# this is done when we go bottom up and detect type of destination blocks
 # See comparator() for comparision rules.
 
 def createBlockDSMap():
@@ -452,15 +574,29 @@ def createBlockDSMap():
 		startPtrIndexList = getPtrIndex(blockContents)		
 		listSize = len(startPtrIndexList)
 		if listSize is 0: # no pointers
-			blockDSMap[blockNumber] = ['U'] * blockSize
+				# remove trailing unallocated bytes
+			index = len(blockDPMap[blockNumber]) -1
+			while blockDPMap[blockNumber][index] == 'U' and index >=0:
+				index -=1
+			blockDSMap[blockNumber] = blockDPMap[blockNumber][0:index + 1]
 		if listSize is 1: # 1 pointer
-			blockDSMap[blockNumber]	= blockDPMap[blockNumber]
+			# copy everything except trailing unallocated bytes marked 'U'
+			index = len(blockDPMap[blockNumber])
+			for byte in reversed(blockDPMap[blockNumber]):
+				if byte == 'U':
+					index-=1
+				else: 
+					break
+			blockDSMap[blockNumber]	= blockDPMap[blockNumber][0:index]
 		if listSize >= 2: # 2 or more pointers
+
 			# see diff between pointer offsets. if the difference is constant,
 			# struct has constant size, no variable elements.
-			# if struct has variable size, check if unkown 'U' field is variable
-			# or pointer field is variable. if unknown field is variable, we place
-			# ** after U. If pointer field is variable, we place * after P
+			# if struct has variable size, check whether P field or D field is 
+			# variable. 
+			# If pointer field is variable, we place *P while typing blocks. 
+			# If data field is variable, we place * after D
+
 			firstPtr = startPtrIndexList[0]
 			secondPtr = startPtrIndexList[1]
 			structSize = secondPtr - firstPtr
@@ -479,10 +615,25 @@ def createBlockDSMap():
 					blockDSMap[blockNumber] = \
 						generateVariableStruct(blockDPMap[blockNumber])
 					break
+			
+			if variableField == False:	# check if data field is variable, by
+						# checking if data field terminates and pointer
+						# field starts after each structure inside block.
+				for i in range(0 , len(blockDPMap[blockNumber]) - structSize, structSize):
+					print 'blockNumber',blockNumber,'offset' ,i+structSize , 'length of list', len(blockDPMap[blockNumber])
+					if blockDPMap[blockNumber][i+structSize - 1] != 'D':
+						variableField = True
+					if blockDPMap[blockNumber][i+structSize] != 'P':
+						variableField = True
+			if variableField == True:
+				blockDSMap[blockNumber] = \
+						generateVariableStruct(blockDPMap[blockNumber])
+
 			if variableField == False:
 				# choose structure from block having max number of pointers
-				# since we want to get maximum comparision from each
-				# block
+				# there might be structure with sparse pointers. hence we 
+				# go for structure with maximum number of pointers in a block
+				# to reach nearer to typing.
 				maxPtrCount = 0
 				for i in range( 0, blockSize, structSize):
 					structInstance = blockDPMap[blockNumber][i:i+structSize]
@@ -598,13 +749,13 @@ if __name__ == "__main__":
 	
 	operations = loadOperations(sys.argv[1])
 	blockTaints = loadBlockTaints(sys.argv[2])
-#	
+
 	taintBlockMap = {} # hash <taint - blockNum>
 	MAP = {}
 	MapTtoNT = defaultdict(list) 
 	MapTtoT = defaultdict(list) 
 	blockTaintDictionary = defaultdict(list) # <BNum - t1,t2,t3>
-#	
+	
 	(taintBlockMap,blockTaintDictionary) = initDataStructures(sys.argv[3])
 
 	# list of blocks that have Types i.e. their substructure elements have been accessed on RHS
@@ -632,30 +783,14 @@ if __name__ == "__main__":
 	print "NON-TYPED BLOCKS"
 	print unknownBlocks 
 
-
-	
 	# get source block and offset for each destination block  
 	# generate backTraces
-
-#	nonTypedBlocks = ['1', '10', '11', '12', '13', '14', '15', '16', '17', '18', '19', '197', '198', '199', '2', '20', '200', '202', '203', '204', '205', '206', '207', '208', '209', '21', '210', '212', '213', '214', '215', '216', '217', '218', '219', '22', '220', '221', '222', '223', '224', '225', '226', '227', '228', '23', '230', '231', '232', '233', '234', '24', '25', '26', '27', '28', '29', '3', '30', '31', '32', '33', '34', '35', '36', '37', '38', '39', '4', '40', '41', '42', '43', '44', '45', '46', '47', '48', '49', '5', '50', '51', '52', '53', '54', '55', '56', '57', '58', '59', '6', '60', '61', '62', '63', '7', '8', '9'] 
-#	typedBlocks = ['0', '192', '193', '194', '195', '196', '201', '211', '229', '64', '65', '66', '67'] 
 
 	for destinationBlock in nonTypedBlocks:
 		srcBlockOffsetMap = getSourceBlockandOffset(destinationBlock, blockTaintDictionary[destinationBlock])
 		for blk in srcBlockOffsetMap:
 			key = 'b'+str(blk)+'.'+str('-'.join(srcBlockOffsetMap[blk]))
 			MapTtoNT[key].append(destinationBlock)
-
-	createBlockDPMap()
-	for k,v in blockDPMap.items():
-		print k,' => ' , v.count('D') + v.count ('P')
-
-#	createBlockDSMap()
-#	for blockNumber, template in blockDSMap.items():
-#		print "-------------------"
-#		print blockNumber, template
-
-#	MapTtoNT = defaultdict(list, (('b66.16-17-18-19', ['198']),('b229.8-9-10-11', ['232']),('b211.0-1-2-3', ['212']),('b229.16-17-18-19', ['234']),('b66.56-57-58-59', ['210']),('b211.44-45-46-47', ['223']),('b0.16-17-18-19', ['197','198','199', '200', '202', '203', '204', '205', '206', '207', '208', '209', '210', '212', '213', '214', '215', '216', '217', '218', '219', '220', '221', '222', '223', '224', '225', '226', '227', '228', '230', '231', '232', '233', '234']),('b201.8-9-10-11', ['204']),('b201.0-1-2-3', ['202']),('b229.4-5-6-7', ['231']),('b211.12-13-14-15', ['215']),('b66.48-49-50-51', ['208']),('b66.12-13-14-15', ['197']),('b211.28-29-30-31', ['219']),('b0.4-5-6-7', ['2', '3']),('b211.8-9-10-11', ['214']),('b201.12-13-14-15', ['205']),('b229.12-13-14-15', ['233']),('b229.0-1-2-3', ['230']),('b66.52-53-54-55', ['209']),('b201.16-17-18-19', ['206']),('b67.20-21-22-23', ['227']),('b211.24-25-26-27', ['218']),('b211.32-33-34-35', ['220']),('b66.44-45-46-47', ['207']),('b0.0-1-2-3', ['1']),('b211.16-17-18-19', ['216']),('b66.24-25-26-27', ['200']),('b67.24-25-26-27', ['228']),('b211.40-41-42-43', ['222']),('b66.20-21-22-23', ['199']),('b211.4-5-6-7', ['213']),('b67.16-17-18-19', ['226']),('b64.12-13-14-15', ['4']),('b0.8-9-10-11', ['10','11', '12', '13', '14', '15', '16', '17', '18', '19', '20', '21', '22', '23', '24', '25', '26', '27', '28', '29', '30', '31', '32', '33', '34', '35', '36', '37', '38', '39', '4', '40', '41', '42', '43', '44', '45', '46', '47', '48', '49', '5', '50', '51', '52', '53', '54', '55', '56', '57', '58', '59', '6', '60', '61', '62', '63', '7', '8', '9']),('b211.48-49-50-51', ['224']),('b211.36-37-38-39', ['221']),('b201.4-5-6-7', ['203']),('b67.12-13-14-15', ['225']),('b211.20-21-22-23', ['217'])))
 
 	for block in typedBlocks:
 		srcBlockOffsetMap = getSourceBlockandOffset(block, blockTaintDictionary[block])
@@ -668,8 +803,25 @@ if __name__ == "__main__":
 		MapTtoT[index] = list(sorted(set(MapTtoT[index])))
 		print index,MapTtoT[index]
 
-#	MapTtoT = defaultdict(list, (('b193.14-15-16-17', ['64']),('b196.14-15-16-17', ['66']),('b192.51-52-53-54', ['65']),('b0.12-13-14-15', ['64', '65', '66', '67']),('b64.12-13-14-15', ['192']),('b194.14-15-16-17', ['64']),('b66.60-61-62-63', ['211']),('b67.28-29-30-31', ['229']),('b195.14-15-16-17', ['64']),('b196.28-29-30-31', ['67']),('b64.16-17-18-19', ['196']),('b65.44-45-46-47', ['195']),('b0.16-17-18-19', ['193', '194', '195', '196', '201', '211', '229']),('b64.44-45-46-47', ['193']),('b66.28-29-30-31', ['201']),('b192.25-26-27-28', ['64']),('b65.12-13-14-15', ['194'])))
+	createBlockDPMap()
+	#for k,v in blockDPMap.items():
+	#	print k,' => ' , v.count('D') + v.count ('P')
+	#	print k,' => ' , v
+#
+	createBlockDSMap()
+	for blockNumber, template in blockDSMap.items():
+		print "-------------------"
+		print blockNumber, template
 
+#	createPartialTypes()
+#	print 'PARTIAL TYPE LIST'
+#	global PTCount
+#	for Type in range(PTCount+1):
+#		print 'TYPE', Type
+#		for block in blockPTMap:
+#			if blockPTMap[block] == Type:
+#				print block,','
+	
 #	(penultimateBlockMap,MapTtoT,MapTtoNT) = classifyBlocks(MapTtoT, MapTtoNT)
 #	for block in sorted(penultimateBlockMap):
 #		print block,penultimateBlockMap[block]

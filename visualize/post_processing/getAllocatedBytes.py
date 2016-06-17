@@ -70,7 +70,9 @@ def evaluateReadPath(traceFile,readTaint,blockNumber):
 				for items in TaintAndOffsetList:
 					offsetList.extend(re.findall('\[(\d+)\]',items))
 				for offset in offsetList:
-					blockContents[int(blockNumber)][int(offset)] = 'A'				
+					if blockContents[int(blockNumber)][int(offset)] == 'U':
+						# if it is zero, do not mark it A
+						blockContents[int(blockNumber)][int(offset)] = 'A'				
 
 # returns a map of Block == > {Contents}. where contents are either 'U' or 'A' depending
 # on whether the offset is unallocated or allocated respectively.
@@ -119,7 +121,7 @@ def getAllocatedBytes(traceFile):
 #		print blockNumber,blockContents[blockNumber].count('A')
 
 	return blockContents
-#
+
 #if __name__ == "__main__":
 #	""" Main Start """
 #
