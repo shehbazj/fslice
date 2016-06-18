@@ -23,7 +23,7 @@ def evaluateWritePath(traceFile, writeTaint, prevReadTaint, blockNumber, zeroCon
     global blockContents
 
     if blockNumber not in blockContents:
-        blockContents[blockNumber] = ['U'] * BLOCK_SIZE
+        blockContents[int(blockNumber)] = ['U'] * BLOCK_SIZE
 
     with open(traceFile, 'r') as f:
         input_lines = f.readlines()
@@ -36,11 +36,11 @@ def evaluateWritePath(traceFile, writeTaint, prevReadTaint, blockNumber, zeroCon
                 rightTaint = line.split('=')[1].split('[')[0]
 
                 if rightTaint == zeroConstantTaint: # assigning zero
-                    blockContents[blockNumber][offset] = 'Z'
+                    blockContents[int(blockNumber)][int(offset)] = 'Z'
                 elif prevReadTaint is None:
-                    blockContents[blockNumber][offset] = 'A'
+                    blockContents[int(blockNumber)][int(offset)] = 'A'
                 elif rightTaint != prevReadTaint:
-                    blockContents[blockNumber][offset] = 'A'
+                    blockContents[int(blockNumber)][int(offset)] = 'A'
 
 
 def removePadding():
@@ -54,14 +54,15 @@ def removePadding():
         content = BLOCK_SIZE - 1
         padding = True
 
-        while blockContents[block][content] == 'Z' and content >= 0:
-            if padding and blockContents[block][content] == 'Z':
-                blockContents[block][content] = 'U'
-            else:
-                padding = False
-                if blockContents[block][content] == 'Z':
-                    blockContents[block][content] = 'A'
-            content -= 1
+	if blockContents[block][content] == 'Z':
+	    while blockContents[block][content] == 'Z' and content >= 0:
+	        if padding and blockContents[block][content] == 'Z':
+	            blockContents[block][content] = 'U'
+	        else:
+	            padding = False
+	            if blockContents[block][content] == 'Z':
+	                blockContents[block][content] = 'A'
+	        content -= 1
 
 
 def evaluateReadPath(traceFile, readTaint, blockNumber):
@@ -85,12 +86,9 @@ def evaluateReadPath(traceFile, readTaint, blockNumber):
                 for items in TaintAndOffsetList:
                     # offsetList.extend(re.findall('\[(\d+)\]', items))
                     offsetList |= set(re.findall('\[(\d+)\]', items))
-
-    for offset in offsetList:
-        if blockNumber not in blockContents:
-            blockContents[blockNumber] = ['U'] * BLOCK_SIZE
-
-        blockContents[blockNumber][int(offset)] = 'A'
+		    for offset in offsetList:
+			if blockNumber not in blockContents:
+				blockContents[int(blockNumber)][int(offset)] = 'A'
 
 
 def getAllocatedBytes(traceFile):
@@ -117,15 +115,15 @@ def getAllocatedBytes(traceFile):
         taint = re.findall(r'(t\d+)=', blockLine)
         readOrWrite = re.findall(r'\ (r|w)', blockLine)
         # print(taint, blockNum, readOrWrite)
-        blockTaintDict[blockNum[0]].append(taint[0] + '.' + readOrWrite[0])
+        blockTaintDict[int(blockNum[0])].append(taint[0] + '.' + readOrWrite[0])
         # print blockNum.group()
 
     for blockNumber,TaintList in blockTaintDict.items():
         prevTaint = None
         for taint in TaintList:
-            if 'r' in taint:
+            if 'r' in taint: # taint for block in read path
                 prevTaint = taint.split('.')[0]
-            else: # write
+            else: # taint for block in write path
                 writeTaint = taint.split('.')[0]
                 # if prevTaint != None:
                 evaluateWritePath(traceFile, writeTaint, prevTaint, blockNumber, zeroConstantTaint)
@@ -141,6 +139,8 @@ def getAllocatedBytes(traceFile):
     for blockNumber in blockTaintDict:
         print(blockNumber, blockContents[blockNumber].count('A'))
 
+    return blockContents
+
 # input - taint file
 # output - dictionary of <blockId, contentList> where contentList contains either 'A' or 'U'
 # depending on whether the byte is allocated or unallocated.
@@ -150,7 +150,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('trace_file', type=str, help="The path to the trace file.")
     args = parser.parse_args()
-    getAllocatedBytes(args.trace_file)
+    blockContents = getAllocatedBytes(args.trace_file)
 
     for key, values in blockContents.items():
         print(key, values)
+

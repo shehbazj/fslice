@@ -317,13 +317,12 @@ def scanMap(sourceBlockList,Map):
 
 def matchWithoutUnallocatedBytes(block1 , block2):
 	global blockAllocatedContents
-	if len(blockAllocatedContents[block1]) != len(blockAllocatedContents[block2]):
+	if len(blockDSMap[block1]) != len(blockDSMap[block2]):
 		return False
-	for i in range(len(block1)):
-		if blockAllocatedContents[block1][i] == 'U' or \
-			 blockAllocatedContents[block2][i] == 'U':
+	for i in range(len(blockDSMap[block1])):
+		if blockDSMap[block1][i] == 'U' or blockDSMap[block2][i] == 'U':
 			continue
-		if blockAllocatedContents[block1][i] != blockAllocatedContents[block2][i]:
+		if blockDSMap[block1][i] != blockDSMap[block2][i]:
 			return False
 	return True
 
@@ -332,18 +331,21 @@ def matchWithoutUnallocatedBytes(block1 , block2):
 # block2 repeated multiple times.
 
 def isSubStructure(block1, block2):
-	global blockAllocatedContents
-	b1length = len(blockAllocatedContents[block1])
-	b2length = len(blockAllocatedContents[block2])
+	global blockDSMap
+	b1length = len(blockDSMap[block1])
+	b2length = len(blockDSMap[block2])
 	
+	if b1length == 0 or b2length == 0:
+		return False	
+
 	if b1length % b2length == 0:
 		numSubStructures = b1length / b2length
-		smallerStructure = blockAllocatedContents[block2]
-		largerStructure = blockAllocatedContents[block1]
+		smallerStructure = blockDSMap[block2]
+		largerStructure = blockDSMap[block1]
 	elif b2length % b1length == 0:
 		numSubStructures = b2length / b1length
-		smallerStructure = blockAllocatedContents[block1]
-		largerStructure = blockAllocatedContents[block2]
+		smallerStructure = blockDSMap[block1]
+		largerStructure = blockDSMap[block2]
 	else:
 		return False
 	
@@ -352,22 +354,19 @@ def isSubStructure(block1, block2):
 	else:
 		return False
 
-
 # Helper function for getPartialTypes()
 # checks if type exists for a block, if not, creates new type, assigns it
-# to a block, and returns the type back to caller
-# 
+# to both blockToBeTyped and block
 
-def assignType(block):
+def assignType(blockToBeTyped, block):
 	global blockPTMap
 	global PTCount
-	if block in blockPTMap: # if type label already exists
-		return blockPTMap[block]
-	else:			# if new type label has to be generated
+	if block in blockPTMap:
+		blockPTMap[blockToBeTyped] = blockPTMap[block]
+	else:
 		PTCount += 1
 		blockPTMap[block] = PTCount
-		return PTCount
-
+		blockPTMap[blockToBeTyped] = PTCount
 
 # Helper function for createPartialTypes()
 # checks matching rules and returns type
@@ -376,33 +375,40 @@ def getPartialType(blockToBeTyped):
 	global blockAllocatedContents
 	global blockPTMap
 	global PTCount 
-	for block, contents in blockAllocatedContents.items():
+	for block, contents in blockDSMap.items():
 		if blockToBeTyped in blockPTMap: # block already has a partial Type
-			return blockPTMap[blockToBeTyped]
+			return #blockPTMap[blockToBeTyped]
 
 		if block == blockToBeTyped:	
 			# skip self
 			continue
 
-		if blockAllocatedContents[block] == blockAllocatedContents[blockToBeTyped]:
+		if blockDSMap[block] == blockDSMap[blockToBeTyped]:
 			# exact match
-			return assignType(block)
+			#print "MATCH: ",block, blockToBeTyped
+			#return assignType(block)
+			assignType(blockToBeTyped, block)
+			return	
 			
-		if set(blockAllocatedContents[block]) < set(blockAllocatedContents[blockToBeTyped]) or \
-		set(blockAllocatedContents[blockToBeTyped]) < set(blockAllocatedContents[block]):
-			# check for subStructure
-			if isSubStructure(block, blockToBeTyped) == True:
-				return assignType(block)
+			# check if one block is a substructure of another block
+		if isSubStructure(block, blockToBeTyped) == True:
+			assignType(blockToBeTyped,block)
+			return
+		# TODO for blocks with 'U', we should try and replace 'U' with 'D'
+		# and 'P' and see if a template can be created. This should be done
+		# 'before' the classification starts. currently we are doing exact
+		# match of 2 lists by avoiding 'U's
 	
-		if blockAllocatedContents[block].count('U') !=0 or \
-			blockAllocatedContents[blockToBeTyped].count('U') !=0:
+		if blockDSMap[block].count('U') !=0 or \
+			blockDSMap[blockToBeTyped].count('U') !=0:
 			# check if there is a match after discarding unallocated bytes
 			if matchWithoutUnallocatedBytes(block, blockToBeTyped) == True:
-				return assignType(block)
+				assignType(blockToBeTyped,block)
+				return
 	
 		# no match, create and return new Type
-		PTCount += 1
-		return PTCount	
+	PTCount += 1
+	blockPTMap[blockToBeTyped] = PTCount	
 
 # from a blockDSMap, create partial types, i.e. cluster blocks based on
 # information of bytes - wheather they are 'D', 'P' or 'U' (data, pointer
@@ -423,15 +429,19 @@ def createPartialTypes():
 	global blockAllocatedContents
 	global blockPTMap
 	
-	for block, contents in blockAllocatedContents.items():
-		pointerCount = contents.count('P')
+	for block, contents in blockDSMap.items():
+		pointerCount = contents.count('P') + contents.count('P*')
 		unknownCount = contents.count('U')
-		dataCount = contents.count('D')
+		dataCount = contents.count('D') + contents.count('D*')
+		#print block, pointerCount, unknownCount, dataCount
 		if pointerCount == 0 and unknownCount == 0: # all Data
-			blockDSMap[block] = ['D*']
-		if dataCount == 0 and unknownCount == 0: # all pointer
-			blockDSMap[block] = ['P*']
-		blockPTMap[block] = getPartialType(block)
+			if dataCount != 0:
+				blockDSMap[block] = ['D*']
+		elif dataCount == 0 and unknownCount == 0: # all pointer
+			if pointerCount != 0:
+				blockDSMap[block] = ['P*']
+		getPartialType(block)
+	#	print "ASSIGNED ", block, "TYPE : " , blockPTMap[block]
 		
 
 # if all destination blocks of source block list are typed, type the source
@@ -620,7 +630,7 @@ def createBlockDSMap():
 						# checking if data field terminates and pointer
 						# field starts after each structure inside block.
 				for i in range(0 , len(blockDPMap[blockNumber]) - structSize, structSize):
-					print 'blockNumber',blockNumber,'offset' ,i+structSize , 'length of list', len(blockDPMap[blockNumber])
+					#print 'blockNumber',blockNumber,'offset' ,i+structSize , 'length of list', len(blockDPMap[blockNumber])
 					if blockDPMap[blockNumber][i+structSize - 1] != 'D':
 						variableField = True
 					if blockDPMap[blockNumber][i+structSize] != 'P':
@@ -652,14 +662,14 @@ def markUnallocatedBytes():
 	global blockDPMap
 	value = 0
 	for block in blockDPMap:
-		length = min( len(blockAllocatedContents[block]) , len(blockDPMap[block])) 
+		length = min( blockAllocatedContents[block].__len__() , blockDPMap[block].__len__()) 
 		for i in range(length):
 			if blockDPMap[block][i] == 'U' and blockAllocatedContents[block][i] == 'A':
 				blockDPMap[block][i] = 'D'
-#			else:
-#				print block, '[',i , '] = ', blockDPMap[block][i], blockAllocatedContents[block][i]
-#		print block, "DP" , blockDPMap[block]
-#		print block, "Allocated" , blockAllocatedContents[block]
+	#		else:
+	#			print block, '[',i , '] = ', blockDPMap[block][i], blockAllocatedContents[block][i]
+	#print block, "DP" , blockDPMap[block]
+	#print block, "Allocated" , blockAllocatedContents[block]
 	
 # create a map of {blockNumber => { U , U , U , P , P , P }}
 # where the list contains Block Size entries, each entry representing a byte
@@ -809,18 +819,18 @@ if __name__ == "__main__":
 	#	print k,' => ' , v
 #
 	createBlockDSMap()
+	createPartialTypes()
 	for blockNumber, template in blockDSMap.items():
 		print "-------------------"
 		print blockNumber, template
 
-#	createPartialTypes()
-#	print 'PARTIAL TYPE LIST'
-#	global PTCount
-#	for Type in range(PTCount+1):
-#		print 'TYPE', Type
-#		for block in blockPTMap:
-#			if blockPTMap[block] == Type:
-#				print block,','
+	print 'PARTIAL TYPE LIST'
+	global PTCount
+	for Type in range(PTCount+1):
+		print 'TYPE', Type
+		for block in blockPTMap:
+			if blockPTMap[block] == Type:
+				print block,','
 	
 #	(penultimateBlockMap,MapTtoT,MapTtoNT) = classifyBlocks(MapTtoT, MapTtoNT)
 #	for block in sorted(penultimateBlockMap):
