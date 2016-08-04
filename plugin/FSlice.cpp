@@ -51,6 +51,8 @@ class FSliceModulePass : public ModulePass {
   void runOnFunction(const char *);
   void runOnArgs(void);
   void printFunctionName(const char *s);
+  void pushToCallStack(const char *s);
+  void printCallTrace();
   void printString(Instruction *I, const char *s);
   void runOnInstructions(void);
 
@@ -168,6 +170,12 @@ void FSliceModulePass::runOnFunction(const char* s) {
   allocaVSetArray();
   runOnArgs();
   printFunctionName(s);
+  pushToCallStack(s);
+  if(strcmp(s,"read_blocks") == 0){
+    printCallTrace();
+  }else if(strcmp(s,"write_blocks") == 0){
+    printCallTrace();
+  }
   runOnInstructions();
   ArgToVSet.clear();
   IIs.clear();
@@ -306,6 +314,27 @@ void FSliceModulePass::printFunctionName(const char * s){
 	IList.insert(AfterAlloca, PR); 	
 }
 
+// Insert function to print Function Name.
+void FSliceModulePass::pushToCallStack(const char *s){
+	if(!AfterAlloca) return;
+	auto &IList = AfterAlloca->getParent()->getInstList();
+  	auto FunName = CreateString(s);
+	auto PrintFunc = CreateFunc(VoidPtrTy, "__fslice_push_to_call_stack","", FunName->getType());
+	auto PR = CallInst::Create(PrintFunc, {FunName});
+	IList.insert(AfterAlloca,PR); 	
+}
+
+// Print call Trace for a function.
+void FSliceModulePass::printCallTrace() {
+	if(!AfterAlloca) return;
+	auto &IList = AfterAlloca->getParent()->getInstList();
+	//auto Arglist = CreateString(bt.c_str());
+	//auto PrintFunc = CreateFunc(VoidPtrTy, "__fslice_print_func","", Arglist->getType());
+	auto PrintFunc = CreateFunc(VoidPtrTy, "__fslice_print_call_trace","");
+	auto PR = CallInst::Create(PrintFunc);
+	IList.insert(AfterAlloca, PR); 	
+}
+
 // Insert function to print a string before I.
 void FSliceModulePass::printString(Instruction *I, const char * s){
 	return;
@@ -432,6 +461,12 @@ void FSliceModulePass::runOnReturn(BasicBlock *B, ReturnInst *RI) {
                                 IntPtrTy);
     IList.insert(RI, CallInst::Create(StoreFunc, {LoadTaint(RI, RV)}));
   }
+
+  // remove function name from call stack on return
+  auto &IList = B->getInstList();
+  auto PrintFunc = CreateFunc(VoidPtrTy, "__fslice_pop_from_call_stack","");
+  auto PR = CallInst::Create(PrintFunc);
+  IList.insert(RI, PR);
 }
 
 
