@@ -225,6 +225,15 @@ extern "C" Taint __fslice_load_arg(uint64_t i) {
   return t;
 }
 
+// print taint value of each comparator operands. This is to 
+// get FIELD() annotation. from here, we can decide if there
+// are any source block taint values that are compared with some 
+// constant to fetch a destination block.
+
+extern "C" void __fslice_run_on_icmp(Taint Taint1, Taint Taint2) {
+	std::cerr << "#ICMP " << Taint1.id << ", " << Taint2.id << std::endl;
+}
+
 // store tainted value in gArgs ordered list.
 
 extern "C" void __fslice_store_arg(uint64_t i, Taint taint) {

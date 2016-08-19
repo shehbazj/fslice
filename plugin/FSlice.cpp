@@ -62,6 +62,7 @@ class FSliceModulePass : public ModulePass {
   void runOnReturn(BasicBlock *B, ReturnInst *RI);
   void runOnUnary(BasicBlock *B, UnaryInstruction *I);
   void runOnBinary(BasicBlock *B, BinaryOperator *I);
+	void runOnICmp(BasicBlock *B, ICmpInst *I);
   void runOnIntrinsic(BasicBlock *B, MemIntrinsic *MI);
 
   Value *getTaint(Value *V);
@@ -364,7 +365,9 @@ void FSliceModulePass::runOnInstructions(void) {
       runOnUnary(II.B, UI);
     } else if (BinaryOperator *BI = dyn_cast<BinaryOperator>(II.I)) {
       runOnBinary(II.B, BI);
-    }
+    } else if (ICmpInst *IC = dyn_cast<ICmpInst>(II.I)) {
+			runOnICmp(II.B, IC);	
+		}
   }
 }
 
@@ -494,6 +497,21 @@ void FSliceModulePass::runOnBinary(BasicBlock *B, BinaryOperator *I) {
   auto TV = CallInst::Create(Operator, args);
   IList.insert(I, TV);
   IList.insert(I, new StoreInst(TV, TD));
+}
+
+void FSliceModulePass::runOnICmp(BasicBlock *B, ICmpInst *I) {
+	auto TD = getTaint(I);
+	if(!TD) return;
+
+	auto &IList = B->getInstList();
+	auto LT = LoadTaint(I, I->getOperand(0));
+	auto RT = LoadTaint(I, I->getOperand(1));
+
+	auto Op = CreateFunc(VoidPtrTy, "__fslice_run_on_icmp","", IntPtrTy, IntPtrTy);
+	std::vector <Value *> args = {LT, RT};
+	auto TV = CallInst::Create(Op, args);
+	IList.insert(I, TV);
+//	IList.insert(I, TV); 	
 }
 
 void FSliceModulePass::runOnIntrinsic(BasicBlock *B, MemIntrinsic *MI) {
