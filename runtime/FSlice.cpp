@@ -11,6 +11,7 @@
 #include <cerrno>
 #include <sstream>
 #include <algorithm>
+#include <stack>
 
 // Attribute packed is for space compaction. Any object instance created for Taint 
 // requires exactly 64 bits. If packed was not used, each attribute of the structure
@@ -22,6 +23,8 @@ std::string tostring(const T& t) {
 	ss << t;
 	return ss.str();
 }
+
+std::stack<std::string> callStack;
 
 // Attribute packed is for space compaction. Any object instance created for Taint 
 // requires exactly 64 bits. If packed was not used, each attribute of the structure
@@ -163,8 +166,8 @@ static Taint Load(uint64_t addr, uint64_t size) {
 
 static void Store(uint64_t addr, uint64_t size, Taint t) {
   SaveErrno save_errno;
-  std::cerr << "# Invoking Store(" << addr << ", " << size << ", "
-			<< TaintAsString(t) << ")" << std::endl;
+//  std::cerr << "# Invoking Store(" << addr << ", " << size << ", "
+//			<< TaintAsString(t) << ")" << std::endl;
 
   for (auto i = 0U; i < size; ++i) {
     auto &et = gShadow[addr + i];
@@ -222,6 +225,15 @@ extern "C" Taint __fslice_load_arg(uint64_t i) {
   return t;
 }
 
+// print taint value of each comparator operands. This is to 
+// get FIELD() annotation. from here, we can decide if there
+// are any source block taint values that are compared with some 
+// constant to fetch a destination block.
+
+extern "C" void __fslice_run_on_icmp(Taint Taint1, Taint Taint2) {
+	std::cerr << "#ICMP " << Taint1.id << ", " << Taint2.id << std::endl;
+}
+
 // store tainted value in gArgs ordered list.
 
 extern "C" void __fslice_store_arg(uint64_t i, Taint taint) {
@@ -230,7 +242,7 @@ extern "C" void __fslice_store_arg(uint64_t i, Taint taint) {
 
 extern "C" void *__fslice_memset(void *dst, int val, uint64_t size) {
 	SaveErrno save_errno;
-  std::cerr << "# Invoking __fslice_memset(" << dst << ", " << val << ", " << size << ")\n";
+//  std::cerr << "# //Invoking __fslice_memset(" << dst << ", " << val << ", " << size << ")\n";
   const auto t = __fslice_load_arg(1); // from gArgs unoredered map, load 1st element's taint value
 					// into t, and then initialize gArgs[1] to 0,0,false.
   const auto daddr = reinterpret_cast<uint64_t>(dst);
@@ -245,8 +257,8 @@ extern "C" void *__fslice_memset(void *dst, int val, uint64_t size) {
 // taint destination address with the same value as that at source
 extern "C" void *__fslice_memmove(void *dst, const void *src, uint64_t size) {
   SaveErrno save_errno;
-  std::cerr << "# Invoking __fslice_memmove(" << dst << ", " << src << ", " << size
-		    << ")\n";
+//  std::cerr << "# Invoking __fslice_memmove(" << dst << ", " << src << ", " << size
+//		    << ")\n";
 
   const auto daddr = reinterpret_cast<uint64_t>(dst);
   const auto saddr = reinterpret_cast<uint64_t>(src);
@@ -342,7 +354,7 @@ extern "C" Taint __fslice_value(uint64_t val) {
 		std::cerr << "t" << t.id << "=V(" << val << ", " << t.id << ")" << " # "
 				<< TaintAsString(t) << std::endl;
 	}
-	std::cerr << "#taint id = " << t.id << std::endl;
+//	std::cerr << "#taint id = " << t.id << std::endl;
 	return t;
 #else
 	/*if (val) { */
@@ -414,8 +426,8 @@ static Taint GetBlock(uint64_t size, uint64_t nr, char path) {
 
 extern "C" void __fslice_read_block(uint64_t addr, uint64_t size, uint64_t nr) {
   SaveErrno save_errno;
-  std::cerr << "# Invoking __fslice_read_block(" << addr << ", " << size
-		    << ", " << nr << ")\n";
+//  std::cerr << "# Invoking __fslice_read_block(" << addr << ", " << size
+//		    << ", " << nr << ")\n";
 
   auto t = GetBlock(size, nr, 'r');
   for (auto i = 0U; i < size; ++i) {
@@ -429,14 +441,37 @@ extern "C" void __fslice_print_func(void *ptr) {
     std::cerr << "# "<< (char *)ptr << "()" << std::endl;
 }
 
+extern "C" void __fslice_push_to_call_stack(void *ptr) {
+	if(ptr!=NULL)
+	callStack.push(std::string((char *)ptr));		
+	std::cerr << "SSSS Calling function " << callStack.top() << std::endl;
+}
+
+extern "C" void __fslice_pop_from_call_stack() {
+	if(callStack.empty() == true)
+		return;
+	std::cerr << "SSSS Returning back from function" << callStack.top() << std::endl;
+	callStack.pop();
+}
+
+extern "C" void __fslice_print_call_trace() {
+	std::cerr << "SSSS CALL STACK " << callStack.size() << ":";
+	std::stack<std::string > S = callStack;
+	while(S.empty() != true){
+		std::cerr << S.top() << "()--->";
+		S.pop();
+	}
+	std::cerr << std::endl;
+}
+
 // Mark some memory as a block.
 // if the block that is being written is already tainted, write trace.
 // if the block is not tainted, continue.
 
 extern "C" void __fslice_write_block(uint64_t addr, uint64_t size, uint64_t nr) {
   SaveErrno save_errno;
-  std::cerr << "# Invoking __fslice_write_block(" << addr << ", " << size << ", " << nr
-			<< ")\n";
+//  std::cerr << "# Invoking __fslice_write_block(" << addr << ", " << size << ", " << nr
+//			<< ")\n";
 
   auto t = GetBlock(size, nr, 'w');
   for (auto i = 0UL; i < size; ++i) {
