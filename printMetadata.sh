@@ -3,7 +3,7 @@
 # Verify that the input arguments are correct.
 if [ "$#" -ne 6 ]; then
 	echo "Wrong number of arguments!"
-	echo "Usage: ./${0##*/} <file-with-tainted-operations> <verbose-flag> <debug-flag>"
+	echo "Usage: ./${0##*/} <file-with-tainted-operations> <metadata-flag> <graph-flag> <enum-flag> <verbose-flag> <debug-flag>"
 	exit -1
 fi
 

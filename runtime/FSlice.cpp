@@ -256,44 +256,47 @@ extern "C" void *__fslice_memset(void *dst, int val, uint64_t size) {
 
 // taint destination address with the same value as that at source
 extern "C" void *__fslice_memmove(void *dst, const void *src, uint64_t size) {
-  SaveErrno save_errno;
+	SaveErrno save_errno;
 //  std::cerr << "# Invoking __fslice_memmove(" << dst << ", " << src << ", " << size
 //		    << ")\n";
 
-  const auto daddr = reinterpret_cast<uint64_t>(dst);
-  const auto saddr = reinterpret_cast<uint64_t>(src);
-  unsigned newTaint = 0;
-	for(auto i=0U; i < size; i++){
-  	const auto bt = gShadow[saddr+i];
+	const auto daddr = reinterpret_cast<uint64_t>(dst);
+	const auto saddr = reinterpret_cast<uint64_t>(src);
+	unsigned newTaint = 0;
+	for (auto i = 0U; i < size; i++) {
+		const auto bt = gShadow[saddr + i];
 		// if any of the source bytes are not tainted, reassign new taint
 		// to all bytes
-		if(bt.id == 0){
+		if (bt.id == 0) {
 			std::cerr << "#XXX Assigning new Taint" << std::endl;
 			newTaint = gId++;
-			for (auto j=0U; j < size; j++) {
+			for (auto j = 0U; j < size; j++) {
 				gShadow[saddr + j] = {newTaint, j, false};
 			}
 		}
-		if(newTaint!=0)
-		break;
-        }
-// S is a statically assigned memory region - a constant string or a stack allocated memory (local variable)
-	if(newTaint !=0)
-  std::cerr << "t" << newTaint << "=S(" << size << ", " << newTaint << ")" << std::endl;
-
-  for (auto i = 0U; i < size; ++i) {
-    const auto bt = gShadow[saddr + i];
-	if(gShadow[daddr +i].id != 0){
-    		std::cerr << "t" << gShadow[daddr + i].id << "[" << i << "]=t" << bt.id << "["
-			  << bt.offset << "] # fslice_memmove" << std::endl;
-	}else{
-		std::cerr << "# XXX Destination address taint Id is 0" << std::endl;
+		if (newTaint != 0)
+			break;
 	}
-    gShadow[daddr + i] = {bt.id, bt.offset, false};
-  }
-  std::cerr << "#DSTRUCT:"<< "t" << gShadow[daddr].id << "," <<gShadow[daddr].offset << ":Size|" << size << std::endl;
-  __fslice_store_ret({0,0,false}); // initialize all gArgs. intialize gRet to 0,0,false
-  return memmove(dst, src, size);
+// S is a statically assigned memory region - a constant string or a stack allocated memory (local variable)
+	if (newTaint != 0)
+		std::cerr << "t" << newTaint << "=S(" << size << ", " << newTaint << ")"
+				<< std::endl;
+
+	for (auto i = 0U; i < size; ++i) {
+		const auto bt = gShadow[saddr + i];
+		if (gShadow[daddr + i].id != 0) {
+			std::cerr << "t" << gShadow[daddr + i].id << "[" << gShadow[daddr + i].offset << "]=t"
+					<< bt.id << "[" << bt.offset << "] # fslice_memmove"
+					<< std::endl;
+		} else {
+			std::cerr << "# XXX Destination address taint Id is 0" << std::endl;
+		}
+		gShadow[daddr + i] = {bt.id, bt.offset, false};
+	}
+	std::cerr << "#DSTRUCT:" << "t" << gShadow[daddr].id << ","
+			<< gShadow[daddr].offset << ":Size|" << size << std::endl;
+	__fslice_store_ret( { 0, 0, false }); // initialize all gArgs. intialize gRet to 0,0,false
+	return memmove(dst, src, size);
 }
 
 extern "C" void *__fslice_memcpy(void *dst, const void *src, uint64_t size) {
@@ -443,19 +446,19 @@ extern "C" void __fslice_print_func(void *ptr) {
 
 extern "C" void __fslice_push_to_call_stack(void *ptr) {
 	if(ptr!=NULL)
-	callStack.push(std::string((char *)ptr));		
-	std::cerr << "SSSS Calling function " << callStack.top() << std::endl;
+		callStack.push(std::string((char *)ptr));
+	std::cerr << "# SSSS Calling function " << callStack.top() << std::endl;
 }
 
 extern "C" void __fslice_pop_from_call_stack() {
 	if(callStack.empty() == true)
 		return;
-	std::cerr << "SSSS Returning back from function" << callStack.top() << std::endl;
+	std::cerr << "# SSSS Returning back from function" << callStack.top() << std::endl;
 	callStack.pop();
 }
 
 extern "C" void __fslice_print_call_trace() {
-	std::cerr << "SSSS CALL STACK " << callStack.size() << ":";
+	std::cerr << "# SSSS CALL STACK " << callStack.size() << ":";
 	std::stack<std::string > S = callStack;
 	while(S.empty() != true){
 		std::cerr << S.top() << "()--->";
@@ -539,5 +542,5 @@ extern "C" void __fslice_clear() {
 	gBlockTaintIds.clear();
 	gPrevBlock.clear();
 	gBinaryOps.clear();
-	gId=1;		
+	gId=1;
 }
