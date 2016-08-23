@@ -66,9 +66,12 @@ static std::unordered_map<uint64_t,Taint> gShadow;
 static std::unordered_map<uint64_t,Taint> gValues;
 static std::unordered_map<uint64_t,Taint> gObjects;
 
-static std::set<uint64_t> gPrintedBlocks;
+// map from taint Id to Block Number
+static std::unordered_map<uint64_t,uint64_t> gTaintBlockMap;
 static std::unordered_map<uint64_t,Taint> gBlocks;
 static std::vector<uint32_t> gBlockTaintIds;
+// Taint Ids of objects "O" that refer to a Block
+static std::unordered_map<uint64_t,uint64_t> gObjectBlockTaintIds;
 static std::unordered_map<uint64_t,uint64_t> gPrevBlock;
 // op = char value. every op has a <object, taint> value
 static std::unordered_map<const char *,std::unordered_map<uint64_t,Taint>> gBinaryOps;
@@ -156,6 +159,12 @@ static Taint Load(uint64_t addr, uint64_t size) {
     std::cerr << sep << "t" << mt.id << "[" << mt.offset << "]";
     //sep = ",";
   }
+//	Object refers to a block taint
+	if(std::find(gBlockTaintIds.begin(), gBlockTaintIds.end(), gShadow[addr].id) != gBlockTaintIds.end())
+	{
+		gObjectBlockTaintIds[t.id] = gShadow[addr].id;
+	}
+
   std::cerr << ") # Load(" << addr << ", " << size << ")" << std::endl;
   return t;
 }
@@ -231,7 +240,10 @@ extern "C" Taint __fslice_load_arg(uint64_t i) {
 // constant to fetch a destination block.
 
 extern "C" void __fslice_run_on_icmp(Taint Taint1, Taint Taint2) {
-	std::cerr << "#ICMP " << Taint1.id << ", " << Taint2.id << std::endl;
+	if(gObjectBlockTaintIds.find(Taint1.id) != gObjectBlockTaintIds.end())
+		std::cerr << "#ICMPBlock " << Taint1.id << " " << gTaintBlockMap[gObjectBlockTaintIds[Taint1.id]] << " " << Taint2.id << std::endl;
+	if(gObjectBlockTaintIds.find(Taint2.id) != gObjectBlockTaintIds.end())
+		std::cerr << "#ICMPBlock " << Taint2.id << " " << gTaintBlockMap[gObjectBlockTaintIds[Taint2.id]] << " " << Taint1.id << std::endl;
 }
 
 // store tainted value in gArgs ordered list.
@@ -402,11 +414,13 @@ static Taint GetBlock(uint64_t size, uint64_t nr, char path) {
 		t = {gId++, 0, false};
 		//t = {gId++, 0, false, nr * size};
 		gBlockTaintIds.push_back(t.id);
+		std::cerr << "#gBlockTAINT " << t.id << std::endl;
 		const auto st = __fslice_load_arg(1);  // Taint for the size :-)
 		const auto nt = __fslice_load_arg(2);  // Taint for the block number :-)
 		std::cerr << "t" << t.id << "=B(" << size << "," << nr << ",t" << st.id
 				<< ",t" << nt.id << ", " << t.id << ") # GetBlock(" << size
 				<< ", " << nr << ") " << path << std::endl;
+		gTaintBlockMap[t.id] = nr;
 		__fslice_store_ret( { 0, 0, false});
 	} else {
 		std::cerr << "# Block " << nr << " is already tainted as: t" << t.id
