@@ -17,7 +17,7 @@ cmd_mkdir= "mkdir "
 cmd_change_directory = "cd "
 cmd_create_file = "touch "
 cmd_write_file = "write "
-cmd_read_file = "read "
+cmd_read_file = "cat "
 
 """
 Global Variables.
@@ -33,11 +33,16 @@ dirnum = 0
 min_filesize = 0
 max_filesize = 0  
 num_files = 0
-num_files_in_directory = []
+fileInEachDirectory = []
 file_number = 0
+dir_number = 0
 fileArray = []
 dir_entries = defaultdict(list)
 dir_stack = []
+
+"""
+Creates a string of size characters using '0'...'9' characters
+"""
 
 def generateFileContents(size):
     s = ""
@@ -48,34 +53,44 @@ def generateFileContents(size):
                 break
     return s
 
+"""
+Generates file_number of files
+"""
+
 def make_files():
     global file_number
-#   TODO
-#    file_to_create = randint(1, num_files_in_directory)
-    for fileNum in range(0,file_to_create):
-        if file_number >= num_files:
-            return
+    global dir_number
+    currentDirectoryFileCount = fileInEachDirectory[dir_number]
+    for item in range(0,currentDirectoryFileCount):
         fileName = 'file'+str(file_number)
         print cmd_create_file,fileName
         fileContent = generateFileContents(fileArray[file_number])
         print cmd_write_file+str(fileName)+' '+fileContent
         file_number+=1
         print cmd_read_file+str(fileName)
- 
 
-def make_directory(new_directory):
+def make_directory(new_directory, create_files):
+    global dir_number
     print cmd_mkdir+new_directory
-#    change_directory(new_directory)
-#   make_files()
-#    change_directory('..')
+
+    # create new files only when make dir is called 
+    #    from generateRestOfDirectoryHierarchy
+    if create_files is 0:
+        return
+    change_directory(new_directory)
+    make_files()
+    dir_number += 1
+    change_directory('..')
 
 def change_directory(directory_name):
     print cmd_change_directory, directory_name
 
-# returns an array with _num_of_partitions elements where sum of the elements is _sum
-# The logic makes sure, there are no 0's in the middle of the resultant array
-# This is because when we want to create variable number of directories at each level,
-# we do not want 0 directories in the middle of a hierarchy.
+"""
+ returns an array with _num_of_partitions elements where sum of the elements is _sum
+ The logic makes sure, there are no 0's in the middle of the resultant array
+ This is because when we want to create variable number of directories at each level,
+ we do not want 0 directories in the middle of a hierarchy.
+"""
 
 def getRandomNumbers(_sum, _num_of_partitions):
     arr = []
@@ -85,12 +100,9 @@ def getRandomNumbers(_sum, _num_of_partitions):
             candidate_num = randint(1,int(_sum/2))
         else:
             candidate_num = 1
-        #print "candidate_num",candidate_num
         if(left_sum == 0):
-        #    print "assigning 0"
             candidate_num = 0
         elif (left_sum - candidate_num) < 0:
-        #    print "assigning ",left_sum, " since candidate num", candidate_num , " is greater"
             candidate_num = left_sum
         elif (elements == _num_of_partitions - 1): # last element
             candidate_num = left_sum
@@ -99,24 +111,19 @@ def getRandomNumbers(_sum, _num_of_partitions):
     return arr
 
 """
-    Generates an array of file sizes 
+    Generates an array of length num_files containing file sizes
 """
 
-def generateFileArray(min_filesize, max_filesize, num_files):
+def generateFileSizes(min_filesize, max_filesize, num_files):
 
     availableBytes = (BLOCK_SIZE * 512 * percent ) / 100
-    #print "Available Bytes " , availableBytes
     fileBytes = (availableBytes * (100 - dir_percentage)) / 100
 
     REMAINING_BYTES = fileBytes
-    #print "REMAINING_BYTES = ",REMAINING_BYTES
-    #print "MAX_BYTES = ", num_files * max_filesize
-    #print "MIN_BYTES = ", num_files * min_filesize
 
     assert( REMAINING_BYTES < (num_files * max_filesize))
     assert(REMAINING_BYTES > (num_files * min_filesize))
 
-    #print "num files = " , num_files
     for fileNumber in range(0, num_files):
         fileSize = randint(min_filesize, max_filesize)
         num_left_files = num_files - fileNumber
@@ -131,6 +138,10 @@ def generateFileArray(min_filesize, max_filesize, num_files):
 
     return fileArray
 
+"""
+Creates minimum nested directories of "depth" level
+"""
+
 def generateMinimumDirectoryHierarchy():
     num_dirs_left = num_dirs
     global dirnum
@@ -141,7 +152,7 @@ def generateMinimumDirectoryHierarchy():
     parentdir = ROOT
 
     while t_depth > 0:
-        make_directory(dirname)
+        make_directory(dirname,0)
         dir_entries[parentdir].append(dirname)
         change_directory(dirname)
         parentdir = dirname
@@ -155,6 +166,19 @@ def generateMinimumDirectoryHierarchy():
     while t_depth > 0:
         change_directory('..')
         t_depth -=1
+
+"""
+Called by generateRestOfDirectoryHierarchy(). The function recursively
+goes through the filesystem creating directory structures that were 
+captured in a hash table (dir_entries). dir_entries is of the form
+<parent_directory ==> children directory list>
+
+Uses an auxilary data-structure - a stack dir_stack. We do Depth first
+traversal of the directory structure to generate directories. We insert
+a marker "M" so that when we are done creating all children directories of
+the parent directory, we can do an additional cd .. to move up the directory
+tree
+"""
 
 def makeDirectories(parentDir):
     change_directory(parentDir)         
@@ -173,33 +197,37 @@ def makeDirectories(parentDir):
     else:
         dir_stack.append("M")
         for childDir in dir_entries[parentDir]:
-            make_directory(childDir)
+            make_directory(childDir,1)
             dir_stack.append(childDir)
         parentDir = dir_stack.pop()
         return makeDirectories(parentDir)
 
-def generateRestOfDirectoryHierarchy():
+"""
+Called after a minimum hierarchy of "depth" size is created. We use an
+auxillary hash-map: dir_entries to randomly generate parents for each 
+child directory. we first obtain directoryAtEachLevel - from there we 
+assign random parent directories for each subsiquently new directory
+"""
 
+def generateRestOfDirectoryHierarchy():
     # First, create a map of <parent_directory, children_directories>
     potentialParentDirs = ['/']
     for level in range(0, depth):
         newDirs = []
         for dirNum in range(0,directoryAtEachLevel[level]):
-            parent_dir = potentialParentDirs[randint(0, len(potentialParentDirs)-1)]
-            print "parent_dir ", parent_dir
+            parent_dir = potentialParentDirs[randint(0, \
+                                len(potentialParentDirs)-1)]
             newDir = 'dir'+str(level)+str(dirNum)
             dir_entries[parent_dir].append(newDir) 
             newDirs.append(newDir)
-        print "new Potential Dir ========> ", newDirs
         potentialParentDirs = newDirs
-
-    for dirs,dirlist in dir_entries.items():
-        print dirs,' => ' ,dirlist
     
     # Next, create directory structure with the dir_entries map, and use dir_stack stack
-    
     makeDirectories('/')         
 
+"""
+    Main
+"""
 
 
 if __name__ == "__main__":
@@ -228,14 +256,16 @@ if __name__ == "__main__":
     num_dirs=int((MAX_FILE_OR_DIR * dir_percentage) / 100)
     num_files=(MAX_FILE_OR_DIR - num_dirs)
 
-    fileSizeArray = generateFileArray(min_filesize, max_filesize, num_files)
+    fileSizeArray = generateFileSizes(min_filesize, max_filesize, num_files)
+    # number of files we should create per directory.
+    # array of size num_dirs, each element shows number of files that need to be
+    # created in a particular directory
+    fileInEachDirectory = getRandomNumbers(num_files,num_dirs)
     assert(depth < num_dirs)
     generateMinimumDirectoryHierarchy()
 
-    num_dirs_left = num_dirs - depth - 1 # removing directories created by 
-                                    # generateMinimumDirectoryHierarchy
-    # create array that records number of directories at each depth
+    num_dirs_left = num_dirs - depth - 1     
     directoryAtEachLevel = getRandomNumbers(num_dirs_left,depth)
-    print directoryAtEachLevel
+#   print directoryAtEachLevel
 
     generateRestOfDirectoryHierarchy()    
