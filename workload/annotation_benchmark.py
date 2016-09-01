@@ -9,11 +9,19 @@ from collections import defaultdict
 import re
 from random import randint
 
+"""
+Filesystem specific commands.
+"""
+
 cmd_mkdir= "mkdir "
 cmd_change_directory = "cd "
 cmd_create_file = "touch "
 cmd_write_file = "write "
 cmd_read_file = "read "
+
+"""
+Global Variables.
+"""
 
 MAX_FILE_OR_DIR = 40
 BLOCK_SIZE = 64
@@ -21,12 +29,15 @@ BLOCK_SIZE = 64
 percent = 0
 depth = 0
 dir_percentage = 0  
+dirnum = 0
 min_filesize = 0
 max_filesize = 0  
 num_files = 0
-files_in_each_directory = 0
+num_files_in_directory = []
 file_number = 0
 fileArray = []
+dir_entries = defaultdict(list)
+dir_stack = []
 
 def generateFileContents(size):
     s = ""
@@ -39,7 +50,8 @@ def generateFileContents(size):
 
 def make_files():
     global file_number
-    file_to_create = randint(1, files_in_each_directory)
+#   TODO
+#    file_to_create = randint(1, num_files_in_directory)
     for fileNum in range(0,file_to_create):
         if file_number >= num_files:
             return
@@ -53,33 +65,38 @@ def make_files():
 
 def make_directory(new_directory):
     print cmd_mkdir+new_directory
+#    change_directory(new_directory)
+#   make_files()
+#    change_directory('..')
 
 def change_directory(directory_name):
     print cmd_change_directory, directory_name
-    if '..' in directory_name:
-        return
-    else:
-        make_files() 
-       
 
 # returns an array with _num_of_partitions elements where sum of the elements is _sum
+# The logic makes sure, there are no 0's in the middle of the resultant array
+# This is because when we want to create variable number of directories at each level,
+# we do not want 0 directories in the middle of a hierarchy.
+
 def getRandomNumbers(_sum, _num_of_partitions):
     arr = []
-    #print _sum, _num_of_partitions
-    if _sum < _num_of_partitions:
-        while _num_of_partitions > 0:
-            if _sum > 0:
-                arr.append(1) 
-                _sum -=1
-            else:
-                arr.append(0)
-            _num_of_partitions -=1
-        return arr
-    else:
-        arr.append(_sum - _num_of_partitions + 1)
-        for elem in range(1, _num_of_partitions):
-            arr.append(1)
-        return arr
+    left_sum = _sum
+    for elements in range(0,_num_of_partitions):
+        if _sum > 1:
+            candidate_num = randint(1,int(_sum/2))
+        else:
+            candidate_num = 1
+        #print "candidate_num",candidate_num
+        if(left_sum == 0):
+        #    print "assigning 0"
+            candidate_num = 0
+        elif (left_sum - candidate_num) < 0:
+        #    print "assigning ",left_sum, " since candidate num", candidate_num , " is greater"
+            candidate_num = left_sum
+        elif (elements == _num_of_partitions - 1): # last element
+            candidate_num = left_sum
+        arr.append(candidate_num)
+        left_sum -= candidate_num
+    return arr
 
 """
     Generates an array of file sizes 
@@ -114,8 +131,81 @@ def generateFileArray(min_filesize, max_filesize, num_files):
 
     return fileArray
 
+def generateMinimumDirectoryHierarchy():
+    num_dirs_left = num_dirs
+    global dirnum
+    dirname = 'dir'+`dirnum`
+    t_depth = depth
+    ROOT = "/"
+
+    parentdir = ROOT
+
+    while t_depth > 0:
+        make_directory(dirname)
+        dir_entries[parentdir].append(dirname)
+        change_directory(dirname)
+        parentdir = dirname
+        dirnum+=1
+        dirname = 'dir'+`dirnum`
+        num_dirs_left-=1
+        t_depth-=1
+
+    # rewind
+    t_depth = depth
+    while t_depth > 0:
+        change_directory('..')
+        t_depth -=1
+
+def makeDirectories(parentDir):
+    change_directory(parentDir)         
+    if (len(dir_entries[parentDir])) is 0:
+        change_directory('..')
+        if len(dir_stack) is 0:
+            return
+        else:
+            parentDir = dir_stack.pop()
+            while parentDir is "M" and len(dir_stack) is not 0:
+                change_directory('..')
+                parentDir = dir_stack.pop()
+            if len(dir_stack) is 0:
+                return
+            return makeDirectories(parentDir)
+    else:
+        dir_stack.append("M")
+        for childDir in dir_entries[parentDir]:
+            make_directory(childDir)
+            dir_stack.append(childDir)
+        parentDir = dir_stack.pop()
+        return makeDirectories(parentDir)
+
+def generateRestOfDirectoryHierarchy():
+
+    # First, create a map of <parent_directory, children_directories>
+    potentialParentDirs = ['/']
+    for level in range(0, depth):
+        newDirs = []
+        for dirNum in range(0,directoryAtEachLevel[level]):
+            parent_dir = potentialParentDirs[randint(0, len(potentialParentDirs)-1)]
+            print "parent_dir ", parent_dir
+            newDir = 'dir'+str(level)+str(dirNum)
+            dir_entries[parent_dir].append(newDir) 
+            newDirs.append(newDir)
+        print "new Potential Dir ========> ", newDirs
+        potentialParentDirs = newDirs
+
+    for dirs,dirlist in dir_entries.items():
+        print dirs,' => ' ,dirlist
+    
+    # Next, create directory structure with the dir_entries map, and use dir_stack stack
+    
+    makeDirectories('/')         
+
+
+
 if __name__ == "__main__":
     """ Main Start """
+
+    ## accept arguments
 
     parser = argparse.ArgumentParser()
 
@@ -133,70 +223,19 @@ if __name__ == "__main__":
     min_filesize = args.min_filesize
     max_filesize = args.max_filesize
 
+    # initialise variables
 
-    NUM_DIRS=int((MAX_FILE_OR_DIR * dir_percentage) / 100)
-    num_files=(MAX_FILE_OR_DIR - NUM_DIRS)
+    num_dirs=int((MAX_FILE_OR_DIR * dir_percentage) / 100)
+    num_files=(MAX_FILE_OR_DIR - num_dirs)
 
     fileSizeArray = generateFileArray(min_filesize, max_filesize, num_files)
+    assert(depth < num_dirs)
+    generateMinimumDirectoryHierarchy()
 
-#    files_in_each_directory = (num_files + NUM_DIRS -1) / NUM_DIRS
-#    if not files_in_each_directory:
-#        files_in_each_directory = 1
-    files_in_each_directory = 5
-        
-    if depth > NUM_DIRS:
-        exit
-
-    NUM_DIRS_LEFT = NUM_DIRS
-
-    DIRNUM = 0
-    DIRNAME = 'dir'+`DIRNUM`
-    DEPTH = depth
-    ROOT = "/"
-
-    parentDir = ROOT
-
-    print "Maximum Number of Files ", num_files
-    print "Maximum Number of Directories ", NUM_DIRS
-    print "Max Files in each Directory ", files_in_each_directory
-
-    # make minimum number of directories to match depth
-
-    while DEPTH > 0:
-        make_directory(DIRNAME)
-        change_directory(DIRNAME)
-        parent_directory = DIRNAME
-        DIRNUM+=1
-        DIRNAME = 'dir'+`DIRNUM`
-        NUM_DIRS_LEFT-=1
-        DEPTH-=1
-
-    # rewind
-    DEPTH = depth
-    while DEPTH > 0:
-        change_directory('..')
-        DEPTH -=1
-
+    num_dirs_left = num_dirs - depth - 1 # removing directories created by 
+                                    # generateMinimumDirectoryHierarchy
     # create array that records number of directories at each depth
-    directoryAtEachLevel = getRandomNumbers(NUM_DIRS_LEFT,depth)
-    #print directoryAtEachLevel
+    directoryAtEachLevel = getRandomNumbers(num_dirs_left,depth)
+    print directoryAtEachLevel
 
-    # for each level, make X number of directories, where X is element
-    # at position X in directoryAtEachLevel
-
-    level=0
-    for numDirs in directoryAtEachLevel:
-        #print "at level ", level, "number of directories required ", numDirs
-        for directoryNumber in range(0,numDirs):
-            dirname =  "dir"+`level`+`directoryNumber`
-            make_directory(dirname)
-        level += 1
-        change_directory(dirname)
-    
-    #rewind
-    DEPTH = depth
-    while DEPTH > 0:
-        change_directory('..')
-        DEPTH -= 1
-
-    ## Directory structure created
+    generateRestOfDirectoryHierarchy()    
