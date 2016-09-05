@@ -28,8 +28,11 @@ def evaluateWritePath(traceFile, writeTaint, prevReadTaint, blockNumber, zeroCon
     with open(traceFile, 'r') as f:
         input_lines = f.readlines()
         # print writeTaint
+        count = 0
+#        continuous_writes = False
         for line in input_lines:
             if (writeTaint + '[') in line:
+#                continuous_writes = True
                 # print(writeTaint, line)
                 offset = int(line.split('[')[1].split(']')[0])
                 leftTaint = line.split('=')[0].split('[')[0]
@@ -39,9 +42,14 @@ def evaluateWritePath(traceFile, writeTaint, prevReadTaint, blockNumber, zeroCon
                     blockContents[int(blockNumber)][int(offset)] = 'Z'
                 elif prevReadTaint is None:
                     blockContents[int(blockNumber)][int(offset)] = 'A'
+                    count+=1
                 elif rightTaint != prevReadTaint:
                     blockContents[int(blockNumber)][int(offset)] = 'A'
-
+                    count+=1
+#            else:
+#                if continuous_writes == True:
+#                    print blockNumber, count
+#                continuous_writes = False
 
 def removePadding():
     """
@@ -90,6 +98,19 @@ def evaluateReadPath(traceFile, readTaint, blockNumber):
 			if blockNumber not in blockContents:
 				blockContents[int(blockNumber)][int(offset)] = 'A'
 
+"""
+1.  Create list of all block_lines of the form B() # r or B() # w where r and w specify read 
+    and write path respectively.
+2.  Create a blockTaintDict for each block => {taint1 read, taint2 write , ...}
+3.  Iterate over block_lines:
+    a) Process write Path
+    Iterate through each blocks' taint list.
+        -> if the previous taint is read, keep track of that taint in prevTaint variable
+        -> else record the taint as writeTaint. call evaluateWritePath
+    b) Process read Path
+        call evaluateReadPath
+"""
+
 
 def getAllocatedBytes(traceFile):
     global blockContents
@@ -107,7 +128,7 @@ def getAllocatedBytes(traceFile):
                 zeroConstantTaint = re.findall(r'(t\d+)=', line)[0]
 
     assert zeroConstantTaint
-    print("Taint assigned for V(0): {}".format(zeroConstantTaint))
+#    print("Taint assigned for V(0): {}".format(zeroConstantTaint))
 
     # print block_lines
     for blockLine in block_lines:
@@ -136,9 +157,6 @@ def getAllocatedBytes(traceFile):
                 readTaint = taint.split('.')[0]
                 evaluateReadPath(traceFile, readTaint, blockNumber)
 
-    for blockNumber in blockTaintDict:
-        print(blockNumber, blockContents[blockNumber].count('A'))
-
     return blockContents
 
 # input - taint file
@@ -153,5 +171,4 @@ if __name__ == "__main__":
     blockContents = getAllocatedBytes(args.trace_file)
 
     for key, values in blockContents.items():
-        print(key, values)
-
+        print key, values.count('A')
