@@ -96,7 +96,9 @@ def initDataStructures(): # <tNo BlockNo>
 # as nonTypedBlock (i.e. data block)
 
 def getTypeInfo():
-        print "Initializing Data Structures"	
+        print "Initializing Data Structures"
+        typedBlocks = []
+        nonTypedBlocks = []
 	(taintBlockMap,blockTaintDictionary) = initDataStructures()
 	for taint in taintBlockMap:
 		block=taintBlockMap[taint]
@@ -113,6 +115,8 @@ def getTypeInfo():
 			typedBlockTaintList.append(taint)
 			while block in nonTypedBlocks:
 				nonTypedBlocks.remove(block)
+	nonTypedBlocks = list(sorted(set(nonTypedBlocks)))
+	typedBlocks = list(sorted(set(typedBlocks)))
 	return (typedBlocks,nonTypedBlocks)	
 
 def markLeafBlocks(MapTtoNT):
@@ -462,10 +466,11 @@ def createBlockDPMap():
 	global MapTtoNT
 	global MapTtoT
 	global blockAllocatedContents
+        discardMap = defaultdict(list)
 	setBlockDPMap(MapTtoNT)
 	setBlockDPMap(MapTtoT)
 	markLeafBlocks(MapTtoNT) # required to set all leaf Blocks with 'U'
-	blockAllocatedContents = getAllocatedBytes(traceFile)
+	(blockAllocatedContents,discardMap) = getAllocatedBytes(traceFile)
 #	for block,contents in blockAllocatedContents.items():
 #		print block, contents
 	markUnallocatedBytes()
@@ -664,10 +669,8 @@ if __name__ == "__main__":
 	print "derive Non-Typed and Typed Blocks"
 	(typedBlocks, nonTypedBlocks) = getTypeInfo()
 	print "NON-TYPED OR UNINITIALIZED BLOCKS"
-	nonTypedBlocks = list(sorted(set(nonTypedBlocks)))
 	print nonTypedBlocks
 	
-	typedBlocks = list(sorted(set(typedBlocks)))
 	print "TYPED BLOCKS"
 	print typedBlocks
 

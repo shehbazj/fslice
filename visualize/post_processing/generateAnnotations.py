@@ -14,36 +14,42 @@ g) determine fsconst [OPTIONAL]
 
 """
 
-"""
-Prints each block content in the form block Number, offset , size
-"""
-
-def printFSStructSizes(blockContents):
-    for block,contents in blockContents.items():
-        position = 0
-        while position < len(contents):
-            if contents[position] is 'A':
-            startOffset = position
-            while position < len(contents) and contents[position] is 'A':
-            position+=1
-            endOffset = position
-            print 'BLOCK ', block ,' OFFSET <',startOffset, '-',endOffset,'>', \
-                'SIZE ',endOffset - startOffset, '\n'
-            else:
-            position+=1
-
 import os
 from getAllocatedBytes import getAllocatedBytes
+from nonTypedBlocks import getTypeInfo
+
+traceFile = "/tmp/testfs.py"
+
+"""
+Prints each block content in the form block Number, offset , size
+Input:
+    blockFStruct : block = > { count1, count 2...}
+    blockContents : block => {'A',...'Z',...,'U'}
+    nonTypedBlocks : list of all block numbers that do not contain pointers
+    typedBlocks : list of all block numbers that contain pointers
+"""
+
+def printFSStructSizes(blockIntervalSet, blockAllocationCountSet, nonTypedBlocks, typedBlocks):
+    for block, items in blockIntervalSet.items():
+        print 'BLOCK :' , block
+        print 'FSSTRUCT : ', blockIntervalSet[block], ' COUNT : ', blockAllocationCountSet[block]
+        if str(block) in nonTypedBlocks:
+            print 'DATA'
+        else:
+            print 'METADATA'
+
 
 if __name__ == "__main__":
     """ Main Start """
 
-
-    if os.path.isfile("/tmp/testfs.py") is 0:
+    if os.path.isfile(traceFile) is 0:
         print "Did not find /tmp/testfs.py. did you run ./init.sh? "
         exit
 
-    blockContents = getAllocatedBytes("/tmp/testfs.py")
-    printFSStructSizes(blockContents)
+    nonTypedBlocks = []
+    typedBlocks = []
 
-     
+    print "processing getAllocatedBytes"
+    (blockContents, blockIntervalSet, blockAllocationCountSet) = getAllocatedBytes(traceFile)
+    (typedBlocks,nonTypedBlocks) = getTypeInfo()
+    printFSStructSizes(blockIntervalSet, blockAllocationCountSet ,nonTypedBlocks,typedBlocks)

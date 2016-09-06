@@ -4,7 +4,21 @@ import re
 
 BLOCK_SIZE = 64
 blockContents = defaultdict(list)
+blockIntervalSet = defaultdict(list)
+blockAllocationCountSet = defaultdict(list)
 
+def getSection(myList):
+    intervalList = list()
+    startOffset = myList[0]
+    for i in range(1,len(myList)):
+        if myList[i] - myList[i-1] == 1:
+            continue
+        else:
+           # print startOffset, myList[i-1]
+            intervalList.append(str(startOffset)+'-'+str(myList[i-1]))
+            startOffset = myList[i]
+    intervalList.append(str(startOffset)+'-'+str(myList[len(myList)-1]))
+    return intervalList
 
 def evaluateWritePath(traceFile, writeTaint, prevReadTaint, blockNumber, zeroConstantTaint):
     """
@@ -21,6 +35,8 @@ def evaluateWritePath(traceFile, writeTaint, prevReadTaint, blockNumber, zeroCon
     """
 
     global blockContents
+    global blockIntervalSet
+    global blockAllocationCountSet
 
     if blockNumber not in blockContents:
         blockContents[int(blockNumber)] = ['U'] * BLOCK_SIZE
@@ -29,10 +45,12 @@ def evaluateWritePath(traceFile, writeTaint, prevReadTaint, blockNumber, zeroCon
         input_lines = f.readlines()
         # print writeTaint
         count = 0
-#        continuous_writes = False
+        offsets = defaultdict(list)
+        offset = -1
+        continuous_writes = False
         for line in input_lines:
             if (writeTaint + '[') in line:
-#                continuous_writes = True
+                continuous_writes = True
                 # print(writeTaint, line)
                 offset = int(line.split('[')[1].split(']')[0])
                 leftTaint = line.split('=')[0].split('[')[0]
@@ -43,13 +61,18 @@ def evaluateWritePath(traceFile, writeTaint, prevReadTaint, blockNumber, zeroCon
                 elif prevReadTaint is None:
                     blockContents[int(blockNumber)][int(offset)] = 'A'
                     count+=1
+                    offsets[int(blockNumber)].append(offset)
                 elif rightTaint != prevReadTaint:
                     blockContents[int(blockNumber)][int(offset)] = 'A'
                     count+=1
-#            else:
-#                if continuous_writes == True:
-#                    print blockNumber, count
-#                continuous_writes = False
+                    offsets[int(blockNumber)].append(offset)
+            else:
+                if continuous_writes == True:
+                    blockAllocationCountSet[blockNumber].append(str(count))
+                    #print blockAllocationCountSet[blockNumber]
+                    if len(offsets[int(blockNumber)]) != 0:
+                        blockIntervalSet[blockNumber].extend(getSection(offsets[int(blockNumber)]))
+                continuous_writes = False
 
 def removePadding():
     """
@@ -109,11 +132,16 @@ def evaluateReadPath(traceFile, readTaint, blockNumber):
         -> else record the taint as writeTaint. call evaluateWritePath
     b) Process read Path
         call evaluateReadPath
+
+    return blockContents (marked 'A' or 'Z' or 'U') 
+    and blockIntervalSet -> map of block => { list of write intervals }
+    and blockAllocationCountSet -> map of block => { list of write sizes }
 """
 
 
 def getAllocatedBytes(traceFile):
     global blockContents
+    global blockIntervalSet
 
     blockTaintDict = defaultdict(list)
     zeroConstantTaint = None
@@ -157,7 +185,7 @@ def getAllocatedBytes(traceFile):
                 readTaint = taint.split('.')[0]
                 evaluateReadPath(traceFile, readTaint, blockNumber)
 
-    return blockContents
+    return (blockContents,blockIntervalSet, blockAllocationCountSet)
 
 # input - taint file
 # output - dictionary of <blockId, contentList> where contentList contains either 'A' or 'U'
@@ -168,7 +196,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('trace_file', type=str, help="The path to the trace file.")
     args = parser.parse_args()
-    blockContents = getAllocatedBytes(args.trace_file)
+    getAllocatedBytes(args.trace_file)
 
-    for key, values in blockContents.items():
-        print key, values.count('A')
+    for block, items in blockIntervalSet.items():
+        print block,'=>' ,items
+
+#    for key, values in blockContents.items():
+#        print key, values.count('A')
