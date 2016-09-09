@@ -6,7 +6,7 @@
 # if any changes are made to taint output since #55 (specifically "cerr <<" statements 
 # in shehbazj/fslice/runtime/FSlice.cpp, change this script accordingly
 
-echo "./normalize.sh TRACE_FILE"
+echo "./createBacktrace.sh TRACE_FILE"
 if [[ $# -eq 0 ]]; then
 	echo "Processing with default TRACE_FILE - /tmp/testfs.py"
 fi
@@ -55,12 +55,6 @@ createBlockVisualizeFile() {
 	#rm $fileReverse
 }
 
-# normalizes backtrace file. see README A.3, A.4
-#normalizeBackTraceFile() {
-#	
-#
-
-
 # takes taint trace file, generates trace lines as tuples <block number, block taint>
 # we want unique <blockNumber, block number Taint> fields
 # BlockTaint=B(BlockSize ,BlockNumber, BlockSizeTaint, Block number Taint)
@@ -72,7 +66,6 @@ while read line
 do
 	bnum_taint_tuple=$line	
 	createBlockVisualizeFile
-#	normalizeBackTraceFile()	
 done < $BNUM_TAINT_FILE
 
 rm $BNUM_TAINT_FILE

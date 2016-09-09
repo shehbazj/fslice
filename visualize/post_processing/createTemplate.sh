@@ -65,5 +65,5 @@ for file in $FILES; do
 	#$WORKING_DIR/computeTemplateCksum.sh $file $blockNumber $removeConstants
 done
 
-rm -rf $WORKING_DIR/prenormalize/
+#rm -rf $WORKING_DIR/prenormalize/
 

@@ -7,7 +7,7 @@ if __name__ == "__main__":
 
     stackMap = defaultdict(list)
 
-    with open("blockTrace", 'r') as f:
+    with open("blockTrace.tmp", 'r') as f:
         
         input_lines = f.readlines()
         for line in input_lines:

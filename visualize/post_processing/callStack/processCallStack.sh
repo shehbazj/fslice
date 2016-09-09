@@ -1,16 +1,16 @@
-cat /tmp/testfs.py | grep -e "CALL STACK" -e "B" > callStackAndBlockFile
+cat /tmp/testfs.py | grep -e "CALL STACK" -e "B" > callStackAndBlockFile.tmp
 
-rm -rf blocks/*
-rm -rf blockTrace
+rm -rf blocks.tmp/*
+rm -rf blockTrace.tmp
 
 while read line; 
 do
 	if [[ $line == *","* ]]; then
-		echo $line | cut -d"," -f2 >> blockTrace
+		echo $line | cut -d"," -f2 >> blockTrace.tmp
 	elif [[ $line == *":"* ]]; then
-		echo $line | cut -d":" -f2 >> blockTrace
+		echo $line | cut -d":" -f2 >> blockTrace.tmp
 	fi	
-done < callStackAndBlockFile
+done < callStackAndBlockFile.tmp
 
 while read line;
 do
@@ -18,11 +18,11 @@ do
 		stackLine=$line
 	else
 		block=$line
-		echo $stackLine >> blocks/$line
+		echo $stackLine >> blocks.tmp/$line
 	fi
-done < blockTrace
+done < blockTrace.tmp
 
-cd blocks
+cd blocks.tmp
 
 for file in `ls`;
 do
@@ -31,5 +31,7 @@ do
 done
 
 cd ..
+
+python stackSeparation.py
 
 #rm blockTrace
