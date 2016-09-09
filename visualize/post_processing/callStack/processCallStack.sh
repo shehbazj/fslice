@@ -1,7 +1,14 @@
-cat /tmp/testfs.py | grep -e "CALL STACK" -e "B" > callStackAndBlockFile.tmp
-
 rm -rf blocks.tmp/*
 rm -rf blockTrace.tmp
+
+if [[ ! -d blocks.tmp ]]; then
+	echo "blocks.tmp does not exist, creating one"
+	mkdir blocks.tmp
+else
+	echo "blocks.tmp already exists"
+fi
+
+cat /tmp/testfs.py | grep -e "CALL STACK" -e "B" > callStackAndBlockFile.tmp
 
 while read line; 
 do
