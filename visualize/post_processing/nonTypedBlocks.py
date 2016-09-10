@@ -1,19 +1,59 @@
 # gives all blocks whose sub elements have not been accessed
 # usage ./nonTypedBlocks.py operations blockTaints TaintBlockFile
-# usage ./nonTypedBlocks.py operations blockTaints TaintBlockFile
 
 import sys
 import os
-from returnBlockNoAndOffset import returnBlockNoAndOffset
+from getSourceBlockNumberAndOffset import getSourceBlockNumberAndOffset
 from forwardTraceContainsBlock import forwardTraceContainsBlock
 from forwardTraceReferencesSubelements import forwardTraceReferencesSubelements
+from getAllocatedBytes import getAllocatedBytes
 from collections import defaultdict
-from pprint import pprint
+from getSourceBlock import getSourceBlock
+
+traceFile = "/tmp/testfs.py"
 
 blockSize = 64
+
+# Map from Block Number => block contents which can be 'U' or 'D*',
+# where D* is a label / type for a block.
 blockContentMap = defaultdict(list)
+
+# Map from Block Number => block contents which can be 'A' or 'U',
+# where 'A' stands for allocated, and 'U' for unallocated
+blockAllocatedContents = defaultdict(list)
+
+# Map from Block Number => blockLabel, where block label is 'D0,D1,D2'...
 blockLabelMap = {}
 
+# condensed version of blockContentMap. Contains Block and a template of the
+# form B10 = {0-3 => D0, 4-20 => D1, 21-63 => U}
+#templates = defaultdict(map)
+
+# blockDPMap - contains contents of block as Data or Pointer Fields
+blockDPMap = defaultdict(list)
+
+# blockDSMap - map from block number to the internal basic structure
+blockDSMap = defaultdict(map)
+
+# blockPTMap - map from block Number to Partial Type
+# for rules on partial Typing, see createPartialTypes()
+blockPTMap = {}
+
+# partial type Counter. for any new type found, PTCount is incremented by 1
+PTCount = 0
+
+# blockDestToSrcMap - map from destination block to source block(s)
+blockDestToSrcMap = defaultdict(list)
+
+# blockCTMap - map from block Number to Complete Type
+blockCTMap = {}
+
+taintBlockMap = {} # hash <taint - blockNum>
+MapTtoNT = defaultdict(list) 
+MapTtoT = defaultdict(list) 
+blockTaintDictionary = defaultdict(list) # <BNum - t1,t2,t3>
+typedBlockTaintList = [] 
+    
 def usage():
 	print "usage ./nonTypedBlocks.py operations blockTaints TaintBlockFile"
 	sys.exit()
@@ -30,31 +70,55 @@ def loadBlockTaints(blockTaintFile):
 	blockTaints = map(lambda s: s.strip(), blockTaints)
 	return blockTaints
 
-def getBackTraceBlock(block, taintList):
+def getSourceBlockandOffset(block, taintList):
 	#print "In getBackTraceBlock ",block,taintList
 	#table = [{}]
 	srcBlockOffsetMap = {}
 	for taint in taintList:
-		(srcBlockNo,offsetList) = returnBlockNoAndOffset(taint, '/tmp/testfs.py')
+		(srcBlockNo,offsetList) = getSourceBlockNumberAndOffset(taint, traceFile)
 		if srcBlockNo is not None:
 			srcBlockOffsetMap[srcBlockNo]=offsetList
 			#table.append(srcBlockOffsetMap)
 	return srcBlockOffsetMap# (srcBlockNo,table)
 
-def initDataStructures(taintBlockFile): # <tNo BlockNo>
-	with open(sys.argv[3],'r') as f:
+def initDataStructures(): # <tNo BlockNo>
+        taintOffsetToBlock = defaultdict(list)
+	with open(traceFile,'r') as f:
 		for line in f:
-			(taint, block) = line.split()
-			taintBlockMap[taint] = block
-			blockTaintDictionary[block].append(taint)	
-	return (taintBlockMap, blockTaintDictionary)
+                    blockStr = "B("+str(blockSize)+","
+                    if blockStr in line:
+                        taint = line.split("=")[0]
+                        block = line.split(",")[1]
+                        offsetTaint = line.split(",")[3].split('t')[1]
+                        taintBlockMap[taint] = block
+                        taintOffsetToBlock[offsetTaint] = block
+                        blockTaintDictionary[block].append(taint)	
+	return (taintBlockMap, blockTaintDictionary, taintOffsetToBlock)
 
-def getTypeInfo(taintBlockMap,blockTaintDictionary):
+# taintOffsetToBlock is a map of taintOffset -> block
+
+def getSourceDestinationBlocks(taintOffsetToBlock):
+    srcDestBlockMap = defaultdict(list)
+    for destOffsetTaint,destBlock in taintOffsetToBlock.items():
+        srcBlock = getSourceBlock(destOffsetTaint,traceFile)
+        if srcBlock is not None:
+            if destBlock not in srcDestBlockMap[srcBlock]:
+                srcDestBlockMap[srcBlock].append(destBlock)
+    return srcDestBlockMap
+
+# looks for forwardTraces of each block taint. If some offset of a block is being used
+# for referring to another block, it is classified as typedBlock. Otherwise it is classified
+# as nonTypedBlock (i.e. data block)
+
+def getTypeInfo():
+        print "Initializing Data Structures"
+        typedBlocks = []
+        nonTypedBlocks = []
+	(taintBlockMap,blockTaintDictionary,taintOffsetToBlock) = initDataStructures()
 	for taint in taintBlockMap:
 		isNonTypedBlock=True
 		block=taintBlockMap[taint]
-		if forwardTraceContainsBlock(taint,'/tmp/testfs.py') is False: # not Typed
-		#if forwardTraceReferencesSubelements(taint,'/tmp/testfs.py') is False: # not Typed
+		if forwardTraceContainsBlock(taint, traceFile ) is False: # not Typed
 			if list(set(blockTaintDictionary[block]) & set(typedBlockTaintList)) == []:
 				#print "Non Typed Block",block # Non Typed Block
 				nonTypedBlocks.append(block)
@@ -65,373 +129,597 @@ def getTypeInfo(taintBlockMap,blockTaintDictionary):
 				while block in nonTypedBlocks:
 					nonTypedBlocks.remove(block)
 		else:
+	#		print "FWD trace from ",taint,block," leading to another block"
 			typedBlocks.append(block)
 			typedBlockTaintList.append(taint)
 			while block in nonTypedBlocks:
 				nonTypedBlocks.remove(block)
-	return (typedBlocks,nonTypedBlocks)	
+	return (list(sorted(set(typedBlocks))), list(sorted(set(nonTypedBlocks))))
 
-def getBlocksWithSubStructuresAccessed(nonTypedBlocks,taintBlockMap,blockTaintDictionary):
-	subStructReferedBlocks = []
-	typedBlocks = []
-	for taint in taintBlockMap:
-		if taintBlockMap[taint] not in nonTypedBlocks:
-			continue
-		isNonTypedBlock=True
-		block=taintBlockMap[taint]
-		#if forwardTraceContainsBlock(taint,'/tmp/testfs.py') is False: # not Typed
-		if forwardTraceReferencesSubelements(taint,'/tmp/testfs.py') is False: # not Typed
-			if list(set(blockTaintDictionary[block]) & set(typedBlockTaintList)) == []:
-				#print "Non Typed Block",block # Non Typed Block
-				subStructReferedBlocks.append(block)
-			else:	
-				#print "Typed Block", block, taint
-				typedBlocks.append(block)
-				typedBlockTaintList.append(taint)
-				while block in subStructReferedBlocks:
-					subStructReferedBlocks.remove(block)
-		else:
-			typedBlocks.append(block)
-			typedBlockTaintList.append(taint)
-			while block in subStructReferedBlocks:
-				subStructReferedBlocks.remove(block)
-	return typedBlocks
-
-def blockExists(key,MapTtoT):
-	blockNum = (key.split('.')[0])
-	for key in MapTtoT:
-		if blockNum in key.lower():
-			return True
-	return False
-		
-# penultimate blocks are those blocks which only have non-typed blocks (leaf blocks) in the tree as destination pointers
-# if any blocks contain both non-typed blocks and typed-blocks, they are not considered penultimate blocks.
-
-def getPenultimateBlocks(MapTtoT, MapTtoNT):
-	penultimateBlockMap = {}
-	for key in MapTtoNT:
-		if blockExists(key,MapTtoT) is False:
-			penultimateBlockMap[key] = MapTtoNT[key]
-	return penultimateBlockMap
-
-# refresh block map list, after some blocks have been typed, delete them
-def removeTypedBlocks(penultimateBlockMap,MapTtoT,MapTtoNT):
-	MapTtoNT = { k : v for k, v in MapTtoNT.items() if k not in penultimateBlockMap}
-	return (penultimateBlockMap,MapTtoT,MapTtoNT)	
-	
-# returns Map of type {DX : [B0,B1,B2]}
-def createLabelMap():
-	global blockLabelMap
-	print "createLabelMap"
-	labelBlockMap = defaultdict(list)
-	for block,label in blockLabelMap.items():
-		labelBlockMap[label].append(block)
-	print "labelBlockMap---"
-	#for label,blockList in labelBlockMap.items():
-	#	print label,blockList
-	return labelBlockMap			
-	
-def derivePattern(block):
-	global blockContentMap
-	pattern = {}
-	index = 0
-
-	if block in blockContentMap:
-		contents = blockContentMap[block]
-	else:
-		return pattern
-	while True:
-		start_idx = index
-		value = contents[index]
-		while (index < (len(contents))) and (value in contents[index]):
-			index+=1
-		pattern[str(start_idx) + '-' + str(index - 1)] = value
-		if index >= (len(contents) -1):
-			break
-
-	print "block ",block," pattern ",pattern
-	return pattern
-
-# this function will partition same labeled blocks or join different labeled blocks based
-# on rules. It updates corresponding entries in blockLabelMap and blockContentMap
-
-def clusterTypes():
-	global blockLabelMap
-	global blockContentMap
-	labelBlockMap = createLabelMap()
-	pattern = defaultdict(map)
-	for label,blockList in labelBlockMap.items():
-		for block in blockList:
-			pattern[block] = derivePattern(block)
-		
-	
-def labelBlocks():
-	global blockLabelMap
-	global blockContentMap
-	for k,v in blockContentMap.items():
-		labelList = []
-		#if k not in blockLabelMap: # block not Typed yet
-		for element in v:
-			if 'D' in element:
-				labelList.append(element)
-		if labelList:	# found block pointers
-				# TODO currently dumb algorithm, categorizes all blocks based on 
-				# contents of the blocks. need to bring more intelligence - based
-				# on start offset etc.
-			label = max(labelList).split('D')[1]
-			blockLabelMap[k] = 'D'+str(int(label)+1)
-			#print "XXXX--labelBlocks = ",k,blockLabelMap[k]
-		else:	# no block pointers found
-			if k not in blockLabelMap:
-				blockLabelMap[k] = 'D0'
-
-# fill blockContentMap with types
-# from Map, detect the source block and offsets. From destination, check for the maximum label
-# among destination blocks, assign 1 higher label to source block.
-
-def createTemplate(Map):
-	global blockContentMap
-	ptrType = ''
-	srcPtrType = 'D1'
-	for k,v in Map.items():
-		blockNum = k.split('.')[0].split('b')[1]
-		if blockNum not in blockContentMap:
-			blockContentMap[blockNum] = ['U']*blockSize
-			if not ptrType:
-				ptrType = 'D0'
-		else:
-			if not [s for s in blockContentMap[blockNum] if 'D' in s]:
-				if not ptrType:
-					ptrType = 'D0'
-			else:
-				if not ptrType:
-					ptrType = max([s for s in blockContentMap[blockNum] if 'D' in s])
-					srcPtrType = 'D'+str(int(ptrType.split('D')[1])+1)
-
-		offset = k.split('.')[1]
-		offsetList = offset.split('-')
-		#print "createTemplate => blockNum ",blockNum
-		if blockNum not in blockLabelMap:
-			blockLabelMap[blockNum] = srcPtrType
-		for off in offsetList:
-			for destBlock in v:
-				if destBlock in blockLabelMap: # if multiple data labels are pointed to by src offset,
-								# choose largest label and assign it to blockContentMap
-					ptrType = blockLabelMap[destBlock]
-			blockContentMap[blockNum][int(off)] = ptrType
-
-#	for block in blockContentMap:
-#		print block,blockContentMap[block]
-	
-# for all leaf blocks, initialize blockContentMap and blockLabelMap
-# all values in MapTtoNT are nonTyped. so mark them non-typed
 def markLeafBlocks(MapTtoNT):
+	global blockDPMap
+	global blockContentMap
+	global blockLabelMap
 	for k,destBlockList in MapTtoNT.items():
 		#print "leaf Blocks ",destBlockList
 		for destinationBlock in destBlockList:
 			blockContentMap[destinationBlock] = ['U']*blockSize
 			blockLabelMap[destinationBlock] = 'D0'
+			blockDPMap[int(destinationBlock)] = ['U']*blockSize 
 			
-def getSourcePointerMap(destinationblockList,MapTtoT, MapTtoNT):
-	sourcePointerMap = defaultdict(list)
-	for block in destinationblockList:
-		blockNum = block.split('b')[1]
-		for k,v in MapTtoT.items():
-			if blockNum in v:
-				sourcePointerMap[k] = blockNum
-		for k,v in MapTtoNT.items():
-			if blockNum in v:
-				sourcePointerMap[k] = blockNum
-	return sourcePointerMap
+# Helper function for getPartialType()
+# matches b1 and b2 contents after discarding 'U'
 
-def getSourceBlocks(sourcePointerMap):
-	sourceBlockList = []
-	for block in sourcePointerMap:
-		blockNum = block.split('.')[0].split('b')[1]
-		sourceBlockList.append(blockNum)
-	return sourceBlockList
+def matchWithoutUnallocatedBytes(block1 , block2):
+	global blockAllocatedContents
+	if len(blockDSMap[block1]) != len(blockDSMap[block2]):
+		return False
+	for i in range(len(blockDSMap[block1])):
+		if blockDSMap[block1][i] == 'U' or blockDSMap[block2][i] == 'U':
+			continue
+		if blockDSMap[block1][i] != blockDSMap[block2][i]:
+			return False
+	return True
 
-def scanMap(sourceBlockList,Map):
-	nextLevelList = []
-	ptrType = 'D0'
-	print "scanMap"
-	for block in sourceBlockList:
-		print "block - ",block
-		for srcBlk, destBlockList in Map.items():
-			srcBlock = srcBlk.split('.')[0].split('b')[1]
-			if srcBlock == block:
-				print "srcBlock", srcBlock ," is block ",block
-				for destBlk in destBlockList:
-					if destBlk not in blockLabelMap:
-						# check if it exists in blockContentMap
-						if destBlk not in blockContentMap:
-							nextLevelList.append(block)
-						else:
-							createTemplate({srcBlk : destBlk})	
-					else:
-						createTemplate({srcBlk : destBlockList})
-						labelBlocks()
-				#		if 'D' in blockLabelMap[destBlk]:
-				#			#print 'XXXXXX blockLabelMap for destination Block',destBlk,blockLabelMap[destBlk]
-				#			#ptrType = max('D0', blockLabelMap[destBlk])
-				#			#ptrType = 'D'+str(int(ptrType.split('D')[1])+1)
-				#			#if srcBlock not in blockLabelMap or (blockLabelMap[srcBlock] < ptrType):
-				#			#	blockLabelMap[srcBlock] = ptrType
-				#			##print "calling createTemplate for ptrType ",ptrType," srcBlk ",srcBlk	
-				#			#createTemplate({srcBlk : destBlockList})
-				#		else:
-				#			print "for srcBlock",srcBlock, " dest block", destBlk, " has label ",blockLabelMap[destBlk]
-	print "nextLevelList",nextLevelList
-	return sorted(set(nextLevelList))	
+# Helper function for getPartialType()
+# isSubStructure(block1, block2) checks if block1 can be obtained from
+# block2 repeated multiple times.
 
-
-# if all destination blocks of source block list are typed, type the source
-# block list as well. Return list of blocks that were not typed. These will
-# be typed in the next iteration.
-
-def assignLevel(sourceBlockList,MapTtoT, MapTtoNT): 
-	nextLevelList = []
-	nextLevelList = scanMap(sourceBlockList,MapTtoT)
-	nextLevelList.append(scanMap(sourceBlockList,MapTtoNT))
-	if not nextLevelList:	
-		return []
-	return (nextLevelList)
-
-
-def getNextLevelBlocks(blockList,MapTtoT, MapTtoNT):
-	#print blockList
-	global blockLabelMap
-	sourcePointerMap = getSourcePointerMap(blockList,MapTtoT, MapTtoNT)
-	sourceBlockList = getSourceBlocks(sourcePointerMap)
-	sourceBlockList = sorted(set(sourceBlockList))
-	print "source Block List ",sourceBlockList
-	typedBlockList = assignLevel(sourceBlockList,MapTtoT,MapTtoNT) 	
-	for block in blockLabelMap:
-		print block, blockLabelMap[block]
-	return []
-
-def extractSrcBlocks(Map):
-	srcBlockList = []
-	for src in Map:
-		blockNum = src.split('.')[0]
-		if blockNum not in srcBlockList:
-			srcBlockList.append(blockNum)
-	#print "srcBlockList",srcBlockList
-	return srcBlockList
+def isSubStructure(block1, block2):
+	global blockDSMap
+	b1length = len(blockDSMap[block1])
+	b2length = len(blockDSMap[block2])
 	
-def classifyBlocks(MapTtoT,MapTtoNT):
-	markLeafBlocks(MapTtoNT)
-	labelBlocks()
-	# blocks that exist in MapTtoNT and not in MapTtoT
-	penultimateBlockMap = getPenultimateBlocks(MapTtoT, MapTtoNT)
-	#(penultimateBlockMap,MapTtoT, MapTtoNT) = removeTypedBlocks(penultimateBlockMap, MapTtoT, MapTtoNT)
-	createTemplate(penultimateBlockMap)
-	labelBlocks()
-	nextLevelBlocks = extractSrcBlocks(penultimateBlockMap)
-	done = False
-	while nextLevelBlocks or done is False:
-		nextLevelBlocks = getNextLevelBlocks(nextLevelBlocks,MapTtoT, MapTtoNT)
-		done = True
-	clusterTypes()
-	labelBlocks()
-	return (penultimateBlockMap, MapTtoT, MapTtoNT)
+	if b1length == 0 or b2length == 0:
+		return False	
+
+	if b1length % b2length == 0:
+		numSubStructures = b1length / b2length
+		smallerStructure = blockDSMap[block2]
+		largerStructure = blockDSMap[block1]
+	elif b2length % b1length == 0:
+		numSubStructures = b2length / b1length
+		smallerStructure = blockDSMap[block1]
+		largerStructure = blockDSMap[block2]
+	else:
+		return False
+	
+	if smallerStructure * numSubStructures == largerStructure:
+		return True
+	else:
+		return False
+
+# Helper function for getPartialTypes()
+# checks if type exists for a block, if not, creates new type, assigns it
+# to both blockToBeTyped and block
+
+def assignType(blockToBeTyped, block):
+	global blockPTMap
+	global PTCount
+	if block in blockPTMap:
+		blockPTMap[blockToBeTyped] = blockPTMap[block]
+	else:
+		PTCount += 1
+		blockPTMap[block] = PTCount
+		blockPTMap[blockToBeTyped] = PTCount
+
+# Helper function for createPartialTypes()
+# checks matching rules and returns type
+
+def getPartialType(blockToBeTyped):
+	global blockAllocatedContents
+	global blockPTMap
+	global PTCount 
+	for block, contents in blockDSMap.items():
+		if blockToBeTyped in blockPTMap: # block already has a partial Type
+			return #blockPTMap[blockToBeTyped]
+
+		if block == blockToBeTyped:	
+			# skip self
+			continue
+
+		if blockDSMap[block] == blockDSMap[blockToBeTyped]:
+			# exact match
+			#print "MATCH: ",block, blockToBeTyped
+			#return assignType(block)
+			assignType(blockToBeTyped, block)
+			return	
+			
+			# check if one block is a substructure of another block
+		if isSubStructure(block, blockToBeTyped) == True:
+			assignType(blockToBeTyped,block)
+			return
+		# TODO for blocks with 'U', we should try and replace 'U' with 'D'
+		# and 'P' and see if a template can be created. This should be done
+		# 'before' the classification starts. currently we are doing exact
+		# match of 2 lists by avoiding 'U's
+	
+		if blockDSMap[block].count('U') !=0 or \
+			blockDSMap[blockToBeTyped].count('U') !=0:
+			# check if there is a match after discarding unallocated bytes
+			if matchWithoutUnallocatedBytes(block, blockToBeTyped) == True:
+				assignType(blockToBeTyped,block)
+				return
+	
+		# no match, create and return new Type
+	PTCount += 1
+	blockPTMap[blockToBeTyped] = PTCount	
+
+# from a blockDSMap, create partial types, i.e. cluster blocks based on
+# information of bytes - wheather they are 'D', 'P' or 'U' (data, pointer
+# or unallocated).
+
+# RULE SET:
+# 1)	if there are only 'P' in a DS Map, group them with other 'P*' blocks
+# 2)	if there are only 'D' in a DS Map, group them with other 'D*' blocks
+# 3)	if there is an exact match between Data Structures, group them together
+# 4)	if a block is a subset of another block, group them together
+# 5)	if a block contains unallocated bytes, we first mark them as 'P', and 
+# 	see if the block matches any other block. Next, try marking 'U' as 'D'
+# 	and match the blocks.
+# 6)	if none of the above rules match, create new partialType entry
+
+
+def createPartialTypes():
+	global blockAllocatedContents
+	global blockPTMap
+	
+	for block, contents in blockDSMap.items():
+		pointerCount = contents.count('P') + contents.count('P*')
+		unknownCount = contents.count('U')
+		dataCount = contents.count('D') + contents.count('D*')
+		#print block, pointerCount, unknownCount, dataCount
+		if pointerCount == 0 and unknownCount == 0: # all Data
+			if dataCount != 0:
+				blockDSMap[block] = ['D*']
+		elif dataCount == 0 and unknownCount == 0: # all pointer
+			if pointerCount != 0:
+				blockDSMap[block] = ['P*']
+		getPartialType(block)
+	#	print "ASSIGNED ", block, "TYPE : " , blockPTMap[block]
+		
+# Input - key of the form srcBlock.Offset1-Offset2-Offset3-Offset4
+# Output - (srcBlockNumber , {Offset1, Offset2, Offset3, Offset4} )
+# eg key b201.15-16-17-18
+
+def getBlockAndOffset(k):
+	blockNum = int(k.split('.')[0].split('b')[1])
+	offsetList = k.split('.')[1].split('-')
+	intOffsetList = []
+	for offset in offsetList:
+		intOffsetList.append(int(offset))
+	return (blockNum, intOffsetList)		
+
+# Input - list of blockContents {D,P, U...} of block Size
+# Output - List of all ptr Indexes - For blockContents as { DDDDPPDDDDPP }
+# the pointer index list is {4,10}
+
+def getPtrIndex(blockContents):
+	ptrList = []
+	index = 0
+	while index < blockSize:
+		if blockContents[index] is 'U' or blockContents[index] is 'D':
+			index+=1
+			continue
+		if blockContents[index] is 'P':
+			ptrList.append(index)
+			while index < blockSize and blockContents[index] is 'P':
+				index+=1
+	return ptrList
+
+
+# checks if 'D' or 'P' element in blockContents is variable. if the element
+# is constant, return the size of 'D' or 'P' field (i.e. number of consequitive
+# bytes). If element is variable, return -1.
+
+def elementIsVariable(element, blockContents):
+        firstElementFieldSize = 0
+        currentElementFieldSize = 0
+        count = 0
+        index = 0
+        while index < len(blockContents):
+                count = 0
+                if blockContents[index] == element:
+                        while index < len(blockContents) and blockContents[index] == element:
+                                count += 1
+                                index += 1
+                        if firstElementFieldSize == 0:
+                                firstElementFieldSize = count
+                                continue
+                        else:
+                                currentElementFieldSize = count
+                                if firstElementFieldSize != currentElementFieldSize:
+                                        return -1
+                index += 1
+        return firstElementFieldSize
+	
+			
+# helper Function for createBlockDSMap
+# if number of pointers for all pointer clusters in a block
+# are same, variable type is the 'D' the data field.
+# if data field is constant, 'D' is constant and 'P' may be variable
+# else, both D and P are variable.
+
+# The last category might be a constant pointer field - with 
+# pointer bytes uninitialized. Detecting a struct with uninitialized
+# pointer fields as a constant sized field is not possible because
+# we cannot know whether unallocated bytes are data or
+# pointer fields.
+
+def generateVariableStruct(blockContents):
+        structure = []
+        element = blockContents[0] # can be 'D' or 'P'
+        count = elementIsVariable(element,blockContents)
+        index = 0
+        if count > 0: # element has constant size
+                structure = [element] * count
+                index = count # scan from next element
+        else:  # variable list
+                structure.append(element + '*')
+
+        while index < len(blockContents): # get next elements size
+                if blockContents[index] != element:
+                        count = elementIsVariable(blockContents[index],blockContents)
+                        if count > 0: # element has constant size
+                                structure.extend( [blockContents[index]] * count)
+                        else:
+                                structure.append(blockContents[index] + '*')
+                        return structure
+                index+=1
+        return structure
+
+# create basic datastructures inside every block. 
+# mapping: { blockNumber => { D,D,D,D,P,P,P,P }
+# this represents the basic struct inside the block. We obtain the size of 
+# a structure by finding the difference between start of two pointer clusters 
+# within a block.
+# A basic structure of a block may contain multiple pointer fields. In this case, we 
+# re-create the structure when we look at destination blocks of pointer fields.
+# this is done when we go bottom up and detect type of destination blocks
+# See comparator() for comparision rules.
+
+def createBlockDSMap():
+	global blockDPMap
+	global blockDSMap
+	for blockNumber,blockContents in blockDPMap.items():
+		startPtrIndexList = getPtrIndex(blockContents)		
+		listSize = len(startPtrIndexList)
+		if listSize is 0: # no pointers
+				# remove trailing unallocated bytes
+			index = len(blockDPMap[blockNumber]) -1
+			while blockDPMap[blockNumber][index] == 'U' and index >=0:
+				index -=1
+			blockDSMap[blockNumber] = blockDPMap[blockNumber][0:index + 1]
+		if listSize is 1: # 1 pointer
+			# copy everything except trailing unallocated bytes marked 'U'
+			index = len(blockDPMap[blockNumber])
+			for byte in reversed(blockDPMap[blockNumber]):
+				if byte == 'U':
+					index-=1
+				else: 
+					break
+			blockDSMap[blockNumber]	= blockDPMap[blockNumber][0:index]
+		if listSize >= 2: # 2 or more pointers
+
+			# see diff between pointer offsets. if the difference is constant,
+			# struct has constant size, no variable elements.
+			# if struct has variable size, check whether P field or D field is 
+			# variable. 
+			# If pointer field is variable, we place *P while typing blocks. 
+			# If data field is variable, we place * after D
+
+			firstPtr = startPtrIndexList[0]
+			secondPtr = startPtrIndexList[1]
+			structSize = secondPtr - firstPtr
+			firstDiff = structSize
+			index = 2
+			variableField = False
+			while index < len(startPtrIndexList):
+				secondPtr = startPtrIndexList[index]
+				firstPtr = startPtrIndexList[index - 1]
+				nextDiff = secondPtr - firstPtr
+				if firstDiff == nextDiff:
+					index+=1
+					continue
+				else: # variable size structure detected
+					variableField = True
+					blockDSMap[blockNumber] = \
+						generateVariableStruct(blockDPMap[blockNumber])
+					break
+			
+			if variableField == False:	# check if data field is variable, by
+						# checking if data field terminates and pointer
+						# field starts after each structure inside block.
+				for i in range(0 , len(blockDPMap[blockNumber]) - structSize, structSize):
+					if blockDPMap[blockNumber][i+structSize - 1] != 'D':
+						variableField = True
+					if blockDPMap[blockNumber][i+structSize] != 'P':
+						variableField = True
+			if variableField == True:
+				blockDSMap[blockNumber] = \
+						generateVariableStruct(blockDPMap[blockNumber])
+
+			if variableField == False:
+				# choose structure from block having max number of pointers
+				# there might be structure with sparse pointers. hence we 
+				# go for structure with maximum number of pointers in a block
+				# to reach nearer to typing.
+				maxPtrCount = 0
+				for i in range( 0, blockSize, structSize):
+					structInstance = blockDPMap[blockNumber][i:i+structSize]
+					ptrCount = structInstance.count('P');
+					if ptrCount > maxPtrCount:
+						maxPtrStructInstance = structInstance 
+						maxPtrCount = ptrCount
+				blockDSMap[blockNumber] = maxPtrStructInstance
+				continue
+
+# mark bytes in DP map which were marked 'U' (Unknown) as 'D' (Data) if they are marked
+# 'A' (Allocated) in blockAllocatedContents 
+			
+def markUnallocatedBytes():
+	global blockAllocatedContents
+	global blockDPMap
+	for block in blockDPMap:
+		length = min( blockAllocatedContents[block].__len__() , blockDPMap[block].__len__()) 
+		for i in range(length):
+			if blockDPMap[block][i] == 'U' and blockAllocatedContents[block][i] == 'A':
+				blockDPMap[block][i] = 'D'
+	
+# create a map of {blockNumber => { U , U , U , P , P , P }}
+# where the list contains Block Size entries, each entry representing a byte
+# where U stands for unassigned/unallocated byte. P stands for a pointer byte
+
+def setBlockDPMap(Map):
+	global blockDPMap
+	for k,v in Map.items():
+		(blockNumber, offsetList) = getBlockAndOffset(k)
+		if blockNumber not in blockDPMap:
+			blockDPMap[blockNumber] = ['U']*blockSize
+		for offset in offsetList:
+			blockDPMap[blockNumber][offset] = 'P'
+
+def createBlockDPMap():
+	global MapTtoNT
+	global MapTtoT
+	global blockAllocatedContents
+        discardMap = defaultdict(list)
+	setBlockDPMap(MapTtoNT)
+	setBlockDPMap(MapTtoT)
+	markLeafBlocks(MapTtoNT) # required to set all leaf Blocks with 'U'
+	(blockAllocatedContents,discardMap) = getAllocatedBytes(traceFile)
+#	for block,contents in blockAllocatedContents.items():
+#		print block, contents
+	markUnallocatedBytes()
+
+# getRootBlock 
+# TODO determine root block by looking at incoming edge count = 0
+
+def getRootBlock():
+	return 0
+
+# search for root Type and assign it a new type, if its current type list contains other
+# blocks. This is to specify a separate root type for the superblock.
+
+def isolateRootType(root): 
+	global PTCount
+	global blockPTMap
+	global blockCTMap
+	rootType = blockPTMap[root]
+	moreElements = False # more elements of same type as root
+	for block, partialType in blockPTMap.items():
+		if block == root:
+			continue
+		if partialType == rootType:
+			moreElements = True
+			break
+	if moreElements == False:
+		return rootType
+	else:
+		PTCount += 1
+		blockCTMap[root] = PTCount
+		del blockPTMap[root]
+	return blockCTMap[root]
+
+	
+# data blocks are conventionally those blocks which do not have any source pointers from 
+# them to other blocks. however there are other blocks (bitmap blocks) which do not have
+# source pointers from them leading to other blocks. However, they do not have any parent
+# other than the source block. we classify these blocks as metadata blocks and assign
+# different types to each of the blocks. we can futher classify them as bitmap blocks based
+# on access patterns (i.e. 1 byte gets accessed)
+
+def isolateDataType(root):
+	global PTCount
+	global MapTtoNT
+	global MapTtoT
+	global blockPTMap
+
+	prevPTCount = PTCount
+	dataBlockList = []
+	# get all blocks of type 'D*' from blockDSMap
+	for block, dataStructure in blockDSMap.items():
+		if dataStructure == ['D*']:
+			dataBlockList.append(block)
+
+	print "dataBlockList" , dataBlockList	
+	
+	for block in dataBlockList:
+		sourceBlockList = []
+		for src, dest in MapTtoNT.items():
+			#print block, src,dest
+			if str(block) in dest:
+				sourceBlockList.append(int(src.split('.')[0].split('b')[1]))
+		for src, dest in MapTtoT.items():
+			#print block, src, dest
+			if str(block) in dest:
+				sourceBlockList.append(int(src.split('.')[0].split('b')[1]))
+	
+		print "BLOCK SrcBlockList:", block, sourceBlockList
+		
+		if root in sourceBlockList and len(sourceBlockList) == 1: 
+			# the only source element is 0
+			if PTCount == prevPTCount:
+				PTCount+=1
+			print "assigning block ",block, "type" , PTCount
+			blockCTMap[block] = PTCount
+			del blockPTMap[block]
+
+	for block, dataStructure in blockDSMap.items():
+		if dataStructure == ['D*'] and blockCTMap[block] <= prevPTCount:
+			return blockPTMap[block]
+	
+# change pointer from 'P' to 'CP'X'' (complete pointer) or 'PP'X'' (partial pointer) 
+# in all source blocks, where X is the type number of the destination blocks. return 
+# all source blocks that got marked
+
+def markSrcPointers(rootBlock, destinationBlocks):
+	global blockDestToSrcMap 
+	global blockDPMap
+	global block
+
+	srcBlockList = []
+
+	for destBlock in destinationBlocks:
+		if len(blockDestToSrcMap[destBlock]) > 1 and '0' not in blockDestToSrcMap[destBlock]:
+			print "XXX: Multiple source pointers spotted"
+			print destBlock, blockDestToSrcMap[destBlock]
+	#		print "Terminating Algorithm"
+	#		assert 0
+		if destBlock in blockCTMap:
+			destType = 'CP'+str(blockCTMap[destBlock])
+		else:
+			destType = 'PP'+str(blockPTMap[destBlock])
+		
+		for srcBlockAndOffset, content in MapTtoT.items():
+			if str(destBlock) in content:
+				srcBlock = srcBlockAndOffset.split(".")[0].split("b")[1]
+				offsetList = srcBlockAndOffset.split(".")[1].split("-")
+				if srcBlock == str(rootBlock):
+					continue
+				for offset in offsetList:
+					if blockDPMap[int(srcBlock)][int(offset)] == 'P':
+						blockDPMap[int(srcBlock)][int(offset)] = destType
+					else:
+						blockDPMap[int(srcBlock)][int(offset)] = \
+							blockDPMap[int(srcBlock)][int(offset)] + '.' + \
+							 str(destType)
+				if srcBlock not in srcBlockList:
+					srcBlockList.append(srcBlock)
+
+		for srcBlockAndOffset, content in MapTtoNT.items():
+			if str(destBlock) in content:
+				srcBlock = srcBlockAndOffset.split(".")[0].split("b")[1]
+				offsetList = srcBlockAndOffset.split(".")[1].split("-")
+				if srcBlock == str(rootBlock):
+					continue
+				for offset in offsetList:
+					if blockDPMap[int(srcBlock)][int(offset)] == 'P':
+						blockDPMap[int(srcBlock)][int(offset)] = destType
+					else:
+						blockDPMap[int(srcBlock)][int(offset)] = \
+							blockDPMap[int(srcBlock)][int(offset)] + '.' + \
+							 str(destType)
+				if srcBlock not in srcBlockList:
+					srcBlockList.append(srcBlock)
+	return srcBlockList
+
+
+# check all blocks of type block have same pointer fields. If the pointer 'P' is assigned
+# to any block, assign it 'PT'X'', where X is the partial pointer type to some other block
+# if any of the blocks in that class do not match, create new type, assign new type to that
+# block, assign all blocks that had destination blocks as that block a new type.
+# if all blocks in the class of blocks have pointer of type CT'X', then assign them the same
+# type, add them to blockCTMap
+
+#def testType(block):
+#	if block in blockCTMap: # block already completely typed
+#		return
+#
+#	sameTypedBlocks = []
+#	if block in blockCTMap: # block already has complete type
+#		return	
+#	else:
+#		blockType = blockPTMap[block]
+#	for block, PT in blockPTMap:
+#		if PT == blockType:
+#			sameTypedBlocks.append(block)
+#	
+#	for blocks in sameTypedBlocks:
+#		if 'P' in blockDPMap[block]: # block needs to be assigned partial/complete Type
+#						
+#		else if 'PP' in blockDPMap[block]: # partial types in blockDPMap
+#
+#		else: # either all data blocks or CP blocks.. this block is also a complete type
+
+# assign partial types - assigns PP'X' to all block contents replacing earlier 'P', where
+# X is the partial type of the destination block
+# uses partial type list and generates complete Type based on the type of pointers
+
+def createCompleteType(rootType, dataType):
+	destinationBlocks = []
+
+#	First, assign all partial pointers to the block Contents
+	
+#	print "rootType", rootType, "dataType", dataType
+	for block, pType in blockPTMap.items():
+#		if pType == dataType:
+#			print "block ", block, "PT Map Type", blockPTMap[block], "dataType", dataType
+		destinationBlocks.append(block)
+#		blockCTMap[block] = pType # data blocks assigned complete type
+#		del blockPTMap[block]
+
+#	print destinationBlocks
+			
+	#while blockCTMap != blockPTMap:
+	sourceBlocks = markSrcPointers(0, destinationBlocks) # XXX remove 0 and replace with root block
+	print "sourceBlocks = " , sourceBlocks
+#	for srcBlock in sourceBlocks:
+#		testType(srcBlock) 			
+
+def generatePointerMaps(typedBlocks, nonTypedBlocks):
+	for destinationBlock in nonTypedBlocks:
+		srcBlockOffsetMap = getSourceBlockandOffset(destinationBlock, blockTaintDictionary[destinationBlock])
+		for blk in srcBlockOffsetMap:
+			key = 'b'+str(blk)+'.'+str('-'.join(srcBlockOffsetMap[blk]))
+			MapTtoNT[key].append(destinationBlock)
+			if blk not in blockDestToSrcMap[int(destinationBlock)]:
+				blockDestToSrcMap[int(destinationBlock)].append(blk)
+
+	for destinationBlock in typedBlocks:
+		srcBlockOffsetMap = getSourceBlockandOffset(destinationBlock, blockTaintDictionary[destinationBlock])
+		for blk in srcBlockOffsetMap:
+			key = 'b'+str(blk)+'.'+str('-'.join(srcBlockOffsetMap[blk]))
+			MapTtoT[key].append(destinationBlock)
+			if blk not in blockDestToSrcMap[int(destinationBlock)]:
+				blockDestToSrcMap[int(destinationBlock)].append(blk)
+        return (MapTtoT, MapTtoNT)
 
 if __name__ == "__main__":
 	""" Main Start """
 
-	if len(sys.argv) != 4:
-		usage()
-	
-	operations = loadOperations(sys.argv[1])
-	blockTaints = loadBlockTaints(sys.argv[2])
-#	
-	taintBlockMap = {} # hash <taint - blockNum>
-	MAP = {}
-	MapTtoNT = defaultdict(list) 
-	MapTtoT = defaultdict(list) 
-	blockTaintDictionary = defaultdict(list) # <BNum - t1,t2,t3>
-#	
-	(taintBlockMap,blockTaintDictionary) = initDataStructures(sys.argv[3])
-
-	# list of blocks that have Types i.e. their substructure elements have been accessed on RHS
-	typedBlockTaintList = [] 
 	nonTypedBlocks = []
 	typedBlocks = []
 
-	# derive Non-Typed Blocks	
-	(typedBlocks, nonTypedBlocks) = getTypeInfo(taintBlockMap, blockTaintDictionary)
+	print "derive Non-Typed and Typed Blocks"
+	(typedBlocks, nonTypedBlocks) = getTypeInfo()
 	print "NON-TYPED OR UNINITIALIZED BLOCKS"
-	nonTypedBlocks = list(sorted(set(nonTypedBlocks)))
 	print nonTypedBlocks
 	
 	print "TYPED BLOCKS"
-	typedBlocks = list(sorted(set(typedBlocks)))
 	print typedBlocks
 
-	subStructureAccessedBlocks = getBlocksWithSubStructuresAccessed(nonTypedBlocks,taintBlockMap, blockTaintDictionary)
-	subStructureAccessedBlocks = list(sorted(set(subStructureAccessedBlocks)))
-	subStructureAccessedBlocks = [x for x in subStructureAccessedBlocks if x not in typedBlocks] 
-	print "SUB-STRUCTURE ACCESSED BLOCKS"
-	print subStructureAccessedBlocks
-
-	unknownBlocks = [x for x in nonTypedBlocks if x not in subStructureAccessedBlocks]
-	print "NON-TYPED BLOCKS"
-	print unknownBlocks 
-
-
-	
 	# get source block and offset for each destination block  
 	# generate backTraces
 
-#	nonTypedBlocks = ['1', '10', '11', '12', '13', '14', '15', '16', '17', '18', '19', '197', '198', '199', '2', '20', '200', '202', '203', '204', '205', '206', '207', '208', '209', '21', '210', '212', '213', '214', '215', '216', '217', '218', '219', '22', '220', '221', '222', '223', '224', '225', '226', '227', '228', '23', '230', '231', '232', '233', '234', '24', '25', '26', '27', '28', '29', '3', '30', '31', '32', '33', '34', '35', '36', '37', '38', '39', '4', '40', '41', '42', '43', '44', '45', '46', '47', '48', '49', '5', '50', '51', '52', '53', '54', '55', '56', '57', '58', '59', '6', '60', '61', '62', '63', '7', '8', '9'] 
-#	typedBlocks = ['0', '192', '193', '194', '195', '196', '201', '211', '229', '64', '65', '66', '67'] 
+        (MapTtoT, MapTtoNT) = generatePointerMaps(typedBlocks, nonTypedBlocks)
 
-	for destinationBlock in nonTypedBlocks:
-		#print "============"
-		#print block, blockTaintDictionary[block]
-		srcBlockOffsetMap = getBackTraceBlock(destinationBlock, blockTaintDictionary[destinationBlock])
-		#print destinationBlock,srcBlockOffsetMap 
-		for blk in srcBlockOffsetMap:
-			key = 'b'+str(blk)+'.'+str('-'.join(srcBlockOffsetMap[blk]))
-			MapTtoNT[key].append(destinationBlock)
-			#print key,'==>',SRC[key]
-	#	for key in sourceBlockAndOffset:
-	#		print key,srcBlock[key]
-
-	print "NON-TYPED BLOCK SRC PTRS"
-	for index in MapTtoNT:
-		MapTtoNT[index] = list(sorted(set(MapTtoNT[index])))
-	#	print index,MapTtoNT[index]
-	print MapTtoNT
-
-#	MapTtoNT = defaultdict(list, (('b66.16-17-18-19', ['198']),('b229.8-9-10-11', ['232']),('b211.0-1-2-3', ['212']),('b229.16-17-18-19', ['234']),('b66.56-57-58-59', ['210']),('b211.44-45-46-47', ['223']),('b0.16-17-18-19', ['197','198','199', '200', '202', '203', '204', '205', '206', '207', '208', '209', '210', '212', '213', '214', '215', '216', '217', '218', '219', '220', '221', '222', '223', '224', '225', '226', '227', '228', '230', '231', '232', '233', '234']),('b201.8-9-10-11', ['204']),('b201.0-1-2-3', ['202']),('b229.4-5-6-7', ['231']),('b211.12-13-14-15', ['215']),('b66.48-49-50-51', ['208']),('b66.12-13-14-15', ['197']),('b211.28-29-30-31', ['219']),('b0.4-5-6-7', ['2', '3']),('b211.8-9-10-11', ['214']),('b201.12-13-14-15', ['205']),('b229.12-13-14-15', ['233']),('b229.0-1-2-3', ['230']),('b66.52-53-54-55', ['209']),('b201.16-17-18-19', ['206']),('b67.20-21-22-23', ['227']),('b211.24-25-26-27', ['218']),('b211.32-33-34-35', ['220']),('b66.44-45-46-47', ['207']),('b0.0-1-2-3', ['1']),('b211.16-17-18-19', ['216']),('b66.24-25-26-27', ['200']),('b67.24-25-26-27', ['228']),('b211.40-41-42-43', ['222']),('b66.20-21-22-23', ['199']),('b211.4-5-6-7', ['213']),('b67.16-17-18-19', ['226']),('b64.12-13-14-15', ['4']),('b0.8-9-10-11', ['10','11', '12', '13', '14', '15', '16', '17', '18', '19', '20', '21', '22', '23', '24', '25', '26', '27', '28', '29', '30', '31', '32', '33', '34', '35', '36', '37', '38', '39', '4', '40', '41', '42', '43', '44', '45', '46', '47', '48', '49', '5', '50', '51', '52', '53', '54', '55', '56', '57', '58', '59', '6', '60', '61', '62', '63', '7', '8', '9']),('b211.48-49-50-51', ['224']),('b211.36-37-38-39', ['221']),('b201.4-5-6-7', ['203']),('b67.12-13-14-15', ['225']),('b211.20-21-22-23', ['217'])))
-
-	for block in typedBlocks:
-		#print "============"
-		srcBlockOffsetMap = getBackTraceBlock(block, blockTaintDictionary[block])
-		#print block,srcBlockOffsetMap
-		for blk in srcBlockOffsetMap:
-			key = 'b'+str(blk)+'.'+str('-'.join(srcBlockOffsetMap[blk]))
-			MapTtoT[key].append(block)
-			#print key,'==>',SRC[key]
-
-	print "TYPED BLOCK SRC PTRS"
+	print "MAP T to T"
 	for index in MapTtoT:
 		MapTtoT[index] = list(sorted(set(MapTtoT[index])))
 		print index,MapTtoT[index]
-
-	print MapTtoT 
-
-#	MapTtoT = defaultdict(list, (('b193.14-15-16-17', ['64']),('b196.14-15-16-17', ['66']),('b192.51-52-53-54', ['65']),('b0.12-13-14-15', ['64', '65', '66', '67']),('b64.12-13-14-15', ['192']),('b194.14-15-16-17', ['64']),('b66.60-61-62-63', ['211']),('b67.28-29-30-31', ['229']),('b195.14-15-16-17', ['64']),('b196.28-29-30-31', ['67']),('b64.16-17-18-19', ['196']),('b65.44-45-46-47', ['195']),('b0.16-17-18-19', ['193', '194', '195', '196', '201', '211', '229']),('b64.44-45-46-47', ['193']),('b66.28-29-30-31', ['201']),('b192.25-26-27-28', ['64']),('b65.12-13-14-15', ['194'])))
-
-	(penultimateBlockMap,MapTtoT,MapTtoNT) = classifyBlocks(MapTtoT, MapTtoNT)
-	for block in sorted(penultimateBlockMap):
-		print block,penultimateBlockMap[block]
-
-	print "blockLabelMap"
-	for block in blockLabelMap:
-		print block,blockLabelMap[block]
-	print "MapTtoNT"
-	for elem in MapTtoNT:
-		print elem, MapTtoNT[elem]
-
+        
+        print "MAP T to NT"
+        for index in MapTtoNT:
+                MapTtoNT[index] = list(sorted(set(MapTtoNT[index])))
+                print index,MapTtoNT[index]

@@ -1,5 +1,8 @@
 import argparse
 import re
+import sys
+
+traceFile = "/tmp/testfs.py"
 
 def forwardTraceContainsBlock(taint_val,trace_file):
 #	print "for taint",taint_val," trace file ",trace_file
@@ -31,7 +34,6 @@ def forwardTraceContainsBlock(taint_val,trace_file):
 				#print "Curset =",curset," relevant = ", relevant
 				relevant_lines.append(line)
 				if 'B(' in line:
-					#print line
 					return True	
 				for taint in curset:
 					if taint not in relevant:
@@ -43,3 +45,6 @@ def forwardTraceContainsBlock(taint_val,trace_file):
 			if 'B(' in line:
            			return True
 	return False
+
+if __name__ == "__main__":
+    forwardTraceContainsBlock(sys.argv[1],traceFile)

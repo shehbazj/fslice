@@ -1,5 +1,6 @@
 import argparse
 import re
+import sys
 
 #if __name__ == "__main__":
 #    """ Main Start """
@@ -7,11 +8,11 @@ import re
 # for a given destination block taint Value, returns the source block and the offset
 # list of the source block that was pointing to the destination block
 
-def returnBlockNoAndOffset(taint_val,trace_file):
+def getSourceBlockNumberAndOffset(taint_val,trace_file):
 	with open(trace_file, 'r') as f:
 		relevant_lines = []
 		flag = None
-		printFunctionNames = None
+		#printFunctionNames = None
 		isFirstLine = True 
 		srcBlockNum = 0
 
@@ -19,7 +20,7 @@ def returnBlockNoAndOffset(taint_val,trace_file):
 		relevant = set([taint_str])
 
 		for line in reversed(f.readlines()):
-			if line[0] == '#' and printFunctionNames != True:
+			if line[0] == '#':
 				continue
 			line = line.strip()
 			curset = set(re.findall(r"t[0-9]+=", line))
@@ -33,26 +34,29 @@ def returnBlockNoAndOffset(taint_val,trace_file):
 		 			sol.append(taint + '=')
 				relevant |= set(sol)
 				relevant_lines.append(line)
-				if printFunctionNames == True:
-					flag = True
+	#			if printFunctionNames == True:
+	#				flag = True
 
-			if printFunctionNames == True:
-				if line.endswith("()") and flag:
-					relevant_lines.append(line)
-					flag = False
+	#		if printFunctionNames == True:
+	#			if line.endswith("()") and flag:
+	#				relevant_lines.append(line)
+	#				flag = False
 
-		backTraceFile = str('transformations/b'+srcBlockNum[0]+'.'+taint_val)
+		#backTraceFile = str('backtrace/'+srcBlockNum[0]+'.'+taint_val)
 		#print backTraceFile
-		fo = open (backTraceFile,"wb")	
+		#fo = open (backTraceFile,"wb")	
 		for line in relevant_lines:
-			fo.write(line)
-			fo.write('\n')
+			#fo.write(line)
+			#fo.write('\n')
 			if 'O' in line:
 				offsetList = re.findall('t[0-9]+\[(.+?)\]',line)
 				#print offsetList
 			if 'B' in line and taint_str not in line:
 				bno = re.findall('B\(64\,(.+?)\,',line)
-				fo.close()
+				#fo.close()
 				return (bno[0],offsetList)	
-	fo.close()
+	#fo.close()
 	return (None,None)
+
+if __name__ == "__main__":
+    print getSourceBlockNumberAndOffset(sys.argv[0],"/tmp/testfs.py")
