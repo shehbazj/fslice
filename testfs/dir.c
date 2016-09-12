@@ -337,6 +337,8 @@ static int testfs_create_file_or_dir(struct super_block *sb, struct context *c, 
 			/* Copy the path until the last occurrence of '/', store the current inode
 			 * number and finally, change directory. */
 			strncpy(path, name, name_offset);
+			path[name_offset] = '\0';
+
 			current_inode = testfs_inode_get_nr(c->cur_dir);
 			c->cmd[1] = path;
 			ret = cmd_cd(sb, c);
@@ -489,6 +491,7 @@ int testfs_dir_name_to_inode_nr_rec(struct super_block *sb, struct inode **dir, 
 					return -ENOMEM;
 
 				strncpy(entry_name, name, name_offset);
+				entry_name[name_offset] = '\0';
 				name_to_search = entry_name;
 			}
 
