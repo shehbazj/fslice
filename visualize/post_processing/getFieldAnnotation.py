@@ -6,17 +6,14 @@ from collections import defaultdict
 """
  Collect all taints involved in ICMP Operations
  ICMP Format:
-ICMPBlock 6684 229 1
+ ICMPBlock 6684 229 1
 
  Check if Taints are values -> discard
  Check if Taints are Objects -> get the blocks taint that the object refers to.
  Check usage of that block Taint. If it is being used for "A", "M", The taint cannot be a FIELD.
  Check usage of that block taint. If it is a POINTER, the block cannot be a FIELD.
-
- TODO
-
- if a taint is being compared to a non-constant, the taint is not a field taint.
  if a taint is a pointer, it is not a field taint.
+ if a taint is being compared to a non-constant, the taint is not a field taint.
  if a taint is being used for A, it is not a field constant.
  if a taint is being compared to another taint that has A or M, it is not a field constant.
 
@@ -64,38 +61,71 @@ def offsetIsPointer(blockField, blockNumber, MapAll,offsetStr,key):
         return True
     return False
 
+def comparedTaintIsConstant(taint):
+    if taint is None:
+        print "ERROR - ICMP value corrupted"
+        return
+    taintVal = 't'+taint+'='
+    with open(traceFile, 'r') as f:
+        inputlines = f.readlines()
+        for lines in inputlines:
+            if taintVal in lines:
+                if 'V' in lines:
+                    return True
+    return False
+
+def taintDoesBinaryOperation(taint):
+    taintVal = 't'+taint
+    with open(traceFile, 'r') as f:
+        inputlines = f.readlines()
+        for lines in inputlines:
+            if taintVal+',' in lines or taintVal+'=' in lines:
+                #print taintVal, lines
+                if 'A' in lines:
+                    #print taintVal , lines
+                    return True
+    #print "taint ", taintVal, " does not have 'A' operation"
+    return False
+
+#ICMPBlock 509 64 35 # 509 - taint number of compared instruction, 64 block number 35 taint of comparator value
+
 def getFieldAnnotation(MapAll):
-    blockField = defaultdict(list) 
+    blockField = defaultdict(list)
     with open(traceFile, 'r') as f:
         input_lines = f.readlines()
         icmp_lines = list()
         for lines in input_lines:
             if 'ICMP' in lines:
-                icmp_lines.append(lines)                                 
-                taint_Blocknumber_Fieldtaint = lines.split(' ')
+                icmp_lines.append(lines)
+                taint_Blocknumber_Comparatortaint = lines.split(' ')
                 # select ICMP lines that have all 3 values - taint, block number and fieldtaint
-                if len(taint_Blocknumber_Fieldtaint) == 4:                    
-                    taint = taint_Blocknumber_Fieldtaint[1]
-                    blockNumber = taint_Blocknumber_Fieldtaint[2]
-                    FieldTaint = taint_Blocknumber_Fieldtaint[3]
+                if len(taint_Blocknumber_Comparatortaint) == 4:
+                    taint = taint_Blocknumber_Comparatortaint[1]
+                    blockNumber = taint_Blocknumber_Comparatortaint[2]
+                    comparatorTaint = taint_Blocknumber_Comparatortaint[3].rstrip()
                     annotation = getAnnotation(taint)
                     #if taint being compared is that of a constant V or a memory allocation M, it cannot be a 
                     #field value. the annotation that has field value is only an O object or a B block
-                    if annotation == 'M' or annotation == 'V':                         
+                    if annotation == 'M' or annotation == 'V':
                         continue
                     elif annotation == 'O':
                         taintLine = getTaintLine(taint)
                         #print "TAINT LINE IS ",taintLine
                         (key, offsetStr) = generateKeyAndOffsetString(taintLine,blockNumber)
                         #print "KEY ", key, " OFFSETSTR", offsetStr
+                        # check if offset is pointer
                         if offsetIsPointer(blockField, blockNumber,MapAll,offsetStr,key) is False:
-                            if offsetStr not in blockField[blockNumber]:
-                                blockField[blockNumber].append(offsetStr)
+                        # check if taint being compared to is a constant value
+                            if comparedTaintIsConstant(comparatorTaint) is True:
+                                if taintDoesBinaryOperation(taint) is False:
+                                    if offsetStr not in blockField[blockNumber]:
+                                        blockField[blockNumber].append(offsetStr)
     return blockField
-                        
+
 if __name__ == "__main__":
     
     mapAll = defaultdict(list)
+    print "calling : getFieldAnnotation"
     blockField = getFieldAnnotation(mapAll)
     for blockNum,Offset in blockField.items():
         print blockNum,Offset

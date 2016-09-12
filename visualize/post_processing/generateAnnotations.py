@@ -65,7 +65,7 @@ if __name__ == "__main__":
     #print "processing getAllocatedBytes"
     (blockContents, blockIntervalSet, blockAllocationCountSet) = getAllocatedBytes(traceFile)
 
-    blockIntervalSet = removeDuplicates(blockIntervalSet)
+    #blockIntervalSet = removeDuplicates(blockIntervalSet)
 
     print "processing get Type Info"
     (typedBlocks,nonTypedBlocks) = getTypeInfo()
@@ -75,6 +75,6 @@ if __name__ == "__main__":
     MapAll = dict(MapTtoT.items() + MapTtoNT.items())
     fieldAnnotations = getFieldAnnotation(MapAll)
 
-    fieldAnnotations = removeDuplicates(fieldAnnotations)
+    #fieldAnnotations = removeDuplicates(fieldAnnotations)
 
     printFSStructSizes(blockIntervalSet, blockAllocationCountSet ,nonTypedBlocks,typedBlocks, MapAll)
