@@ -60,9 +60,8 @@ def generateKeyAndOffsetString(taintLine,blockNumber):
 # t6513=O(t6511,6513,t6511[21],t6511[22],t6511[23],t6511[24])
 
 def offsetIsPointer(blockField, blockNumber, MapAll,offsetStr,key):
-    if key not in MapAll:
-        if offsetStr not in blockField[blockNumber]:
-            return True
+    if key in MapAll:
+        return True
     return False
 
 def getFieldAnnotation(MapAll):

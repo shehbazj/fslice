@@ -38,14 +38,14 @@ def printFSStructSizes(blockIntervalSet, blockAllocationCountSet, nonTypedBlocks
         print 'BLOCK :' , block
         print 'FSSTRUCT : ', blockIntervalSet[block], ' COUNT : ', blockAllocationCountSet[block]
         for srcBlock, destBlock in MapAll.items():
-            if 'b'+str(block) in srcBlock:
+            if 'b'+str(block)+'.' in srcBlock:
                 print 'POINTER ', srcBlock, 'DEST BLOCK(S) ',destBlock
                 if set(destBlock) < set(nonTypedBlocks):
                     print 'TYPE : DATA_POINTER'
                 else:
                     print 'TYPE : METADATA_POINTER'
-            if str(block) in fieldAnnotations and fieldAnnotations[str(block)]:
-                print 'FIELD ',fieldAnnotations[str(block)]
+        if str(block) in fieldAnnotations and fieldAnnotations[str(block)]:
+            print 'FIELD ',fieldAnnotations[str(block)]
 
 def removeDuplicates(dupMap):
     for key,value in dupMap.items():
@@ -67,21 +67,13 @@ if __name__ == "__main__":
 
     blockIntervalSet = removeDuplicates(blockIntervalSet)
 
+    print "processing get Type Info"
     (typedBlocks,nonTypedBlocks) = getTypeInfo()
+    print "get Maps"
     (MapTtoT, MapTtoNT) = generatePointerMaps(typedBlocks,nonTypedBlocks)
-    print "MapTtoNT:=>"
-    for key, value in MapTtoNT.items():
-        print key,value
-
-    print "MapToT:=>"
-    for key,value in MapTtoT.items():
-        print key,value
-
-    print "MapAll:=>"
+    print "get Field Annotations"
     MapAll = dict(MapTtoT.items() + MapTtoNT.items())
-    for key,items in MapAll.items():
-        print key, items
-    fieldAnnotations = getFieldAnnotation(MapAll)    
+    fieldAnnotations = getFieldAnnotation(MapAll)
 
     fieldAnnotations = removeDuplicates(fieldAnnotations)
 
