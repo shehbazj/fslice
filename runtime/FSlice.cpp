@@ -239,6 +239,10 @@ extern "C" Taint __fslice_load_arg(uint64_t i) {
 // are any source block taint values that are compared with some 
 // constant to fetch a destination block.
 
+// XXX currently we assume srcBlock == FIELD
+// If there is a check FIELD == srcBlock, we wont be able to detect that
+// TODO : FIX this - fix is trivial, but I need some sleep...
+
 extern "C" void __fslice_run_on_icmp(Taint Taint1, Taint Taint2) {
 	if(gObjectBlockTaintIds.find(Taint1.id) != gObjectBlockTaintIds.end())
 		std::cerr << "#ICMPBlock " << Taint1.id << " " << gTaintBlockMap[gObjectBlockTaintIds[Taint1.id]] << " " << Taint2.id << std::endl;

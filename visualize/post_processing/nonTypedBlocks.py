@@ -3,11 +3,12 @@
 
 import sys
 import os
-from returnBlockNoAndOffset import returnBlockNoAndOffset
+from getSourceBlockNumberAndOffset import getSourceBlockNumberAndOffset
 from forwardTraceContainsBlock import forwardTraceContainsBlock
 from forwardTraceReferencesSubelements import forwardTraceReferencesSubelements
 from getAllocatedBytes import getAllocatedBytes
 from collections import defaultdict
+from getSourceBlock import getSourceBlock
 
 traceFile = "/tmp/testfs.py"
 
@@ -74,22 +75,36 @@ def getSourceBlockandOffset(block, taintList):
 	#table = [{}]
 	srcBlockOffsetMap = {}
 	for taint in taintList:
-		(srcBlockNo,offsetList) = returnBlockNoAndOffset(taint, traceFile)
+		(srcBlockNo,offsetList) = getSourceBlockNumberAndOffset(taint, traceFile)
 		if srcBlockNo is not None:
 			srcBlockOffsetMap[srcBlockNo]=offsetList
 			#table.append(srcBlockOffsetMap)
 	return srcBlockOffsetMap# (srcBlockNo,table)
 
 def initDataStructures(): # <tNo BlockNo>
+        taintOffsetToBlock = defaultdict(list)
 	with open(traceFile,'r') as f:
 		for line in f:
                     blockStr = "B("+str(blockSize)+","
                     if blockStr in line:
                         taint = line.split("=")[0]
                         block = line.split(",")[1]
+                        offsetTaint = line.split(",")[3].split('t')[1]
                         taintBlockMap[taint] = block
+                        taintOffsetToBlock[offsetTaint] = block
                         blockTaintDictionary[block].append(taint)	
-	return (taintBlockMap, blockTaintDictionary)
+	return (taintBlockMap, blockTaintDictionary, taintOffsetToBlock)
+
+# taintOffsetToBlock is a map of taintOffset -> block
+
+def getSourceDestinationBlocks(taintOffsetToBlock):
+    srcDestBlockMap = defaultdict(list)
+    for destOffsetTaint,destBlock in taintOffsetToBlock.items():
+        srcBlock = getSourceBlock(destOffsetTaint,traceFile)
+        if srcBlock is not None:
+            if destBlock not in srcDestBlockMap[srcBlock]:
+                srcDestBlockMap[srcBlock].append(destBlock)
+    return srcDestBlockMap
 
 # looks for forwardTraces of each block taint. If some offset of a block is being used
 # for referring to another block, it is classified as typedBlock. Otherwise it is classified
@@ -99,25 +114,27 @@ def getTypeInfo():
         print "Initializing Data Structures"
         typedBlocks = []
         nonTypedBlocks = []
-	(taintBlockMap,blockTaintDictionary) = initDataStructures()
+	(taintBlockMap,blockTaintDictionary,taintOffsetToBlock) = initDataStructures()
 	for taint in taintBlockMap:
+		isNonTypedBlock=True
 		block=taintBlockMap[taint]
-		if forwardTraceContainsBlock(taint,traceFile) is False: # not Typed
+		if forwardTraceContainsBlock(taint, traceFile ) is False: # not Typed
 			if list(set(blockTaintDictionary[block]) & set(typedBlockTaintList)) == []:
+				#print "Non Typed Block",block # Non Typed Block
 				nonTypedBlocks.append(block)
 			else:	
+				#print "Typed Block", block, taint
 				typedBlocks.append(block)
 				typedBlockTaintList.append(taint)
 				while block in nonTypedBlocks:
 					nonTypedBlocks.remove(block)
 		else:
+	#		print "FWD trace from ",taint,block," leading to another block"
 			typedBlocks.append(block)
 			typedBlockTaintList.append(taint)
 			while block in nonTypedBlocks:
 				nonTypedBlocks.remove(block)
-	nonTypedBlocks = list(sorted(set(nonTypedBlocks)))
-	typedBlocks = list(sorted(set(typedBlocks)))
-	return (typedBlocks,nonTypedBlocks)	
+	return (list(sorted(set(typedBlocks))), list(sorted(set(nonTypedBlocks))))
 
 def markLeafBlocks(MapTtoNT):
 	global blockDPMap
@@ -659,7 +676,25 @@ def createCompleteType(rootType, dataType):
 	print "sourceBlocks = " , sourceBlocks
 #	for srcBlock in sourceBlocks:
 #		testType(srcBlock) 			
-	
+
+def generatePointerMaps(typedBlocks, nonTypedBlocks):
+	for destinationBlock in nonTypedBlocks:
+		srcBlockOffsetMap = getSourceBlockandOffset(destinationBlock, blockTaintDictionary[destinationBlock])
+		for blk in srcBlockOffsetMap:
+			key = 'b'+str(blk)+'.'+str('-'.join(srcBlockOffsetMap[blk]))
+			MapTtoNT[key].append(destinationBlock)
+			if blk not in blockDestToSrcMap[int(destinationBlock)]:
+				blockDestToSrcMap[int(destinationBlock)].append(blk)
+
+	for destinationBlock in typedBlocks:
+		srcBlockOffsetMap = getSourceBlockandOffset(destinationBlock, blockTaintDictionary[destinationBlock])
+		for blk in srcBlockOffsetMap:
+			key = 'b'+str(blk)+'.'+str('-'.join(srcBlockOffsetMap[blk]))
+			MapTtoT[key].append(destinationBlock)
+			if blk not in blockDestToSrcMap[int(destinationBlock)]:
+				blockDestToSrcMap[int(destinationBlock)].append(blk)
+        return (MapTtoT, MapTtoNT)
+
 if __name__ == "__main__":
 	""" Main Start """
 
@@ -677,21 +712,7 @@ if __name__ == "__main__":
 	# get source block and offset for each destination block  
 	# generate backTraces
 
-	for destinationBlock in nonTypedBlocks:
-		srcBlockOffsetMap = getSourceBlockandOffset(destinationBlock, blockTaintDictionary[destinationBlock])
-		for blk in srcBlockOffsetMap:
-			key = 'b'+str(blk)+'.'+str('-'.join(srcBlockOffsetMap[blk]))
-			MapTtoNT[key].append(destinationBlock)
-			if blk not in blockDestToSrcMap[int(destinationBlock)]:
-				blockDestToSrcMap[int(destinationBlock)].append(blk)
-
-	for destinationBlock in typedBlocks:
-		srcBlockOffsetMap = getSourceBlockandOffset(destinationBlock, blockTaintDictionary[destinationBlock])
-		for blk in srcBlockOffsetMap:
-			key = 'b'+str(blk)+'.'+str('-'.join(srcBlockOffsetMap[blk]))
-			MapTtoT[key].append(destinationBlock)
-			if blk not in blockDestToSrcMap[int(destinationBlock)]:
-				blockDestToSrcMap[int(destinationBlock)].append(blk)
+        (MapTtoT, MapTtoNT) = generatePointerMaps(typedBlocks, nonTypedBlocks)
 
 	print "MAP T to T"
 	for index in MapTtoT:
@@ -702,42 +723,3 @@ if __name__ == "__main__":
         for index in MapTtoNT:
                 MapTtoNT[index] = list(sorted(set(MapTtoNT[index])))
                 print index,MapTtoNT[index]
-
-#
-#	createBlockDPMap()
-#	createBlockDSMap()
-#	createPartialTypes()
-#	for blockNumber, template in blockDSMap.items():
-#		print "-------------------"
-#		print blockNumber, template
-#
-#	# find root block(s):
-#	root = getRootBlock()
-#
-#	rootType = isolateRootType(root)
-#	dataType = isolateDataType(root)	
-#	
-#	print 'PARTIAL TYPE LIST'
-#	for Type in range(PTCount+1):
-#		print 'TYPE', Type
-#		for block in blockPTMap:
-#			if blockPTMap[block] == Type:
-#				sys.stdout.write(str(block)+', ')
-#				sys.stdout.flush()
-#		print ""
-#
-#	print 'COMPLETE TYPE LIST'
-#	for Type in range(PTCount+1):
-#		print 'TYPE', Type
-#		for block in blockCTMap:
-#			if blockCTMap[block] == Type:
-#				sys.stdout.write(str(block)+', ')
-#				sys.stdout.flush()
-#		print ""
-#
-##	print "data Type", dataType, "root Type ", rootType
-#	createCompleteType(rootType, dataType)
-#
-##	print "DPMap"
-##	for k,v in blockDPMap.items():
-##		print k,' => ' , v

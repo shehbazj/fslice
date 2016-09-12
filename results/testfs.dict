@@ -1,0 +1,703 @@
+bitmap::nbits:u_int32_t 
+bitmap::v:WORD_TYPE *
+bitmap_create:nbits:u_int32_t 
+bitmap_create:bp:struct bitmap **
+
+bitmap_create:b:struct bitmap *
+bitmap_create:words:u_int32_t 
+bitmap_create:j:u_int32_t 
+bitmap_create:ix:u_int32_t 
+bitmap_create:overbits:u_int32_t 
+bitmap_getdata:b:struct bitmap *
+
+bitmap_alloc:b:struct bitmap *
+bitmap_alloc:index:u_int32_t *
+
+bitmap_alloc:ix:u_int32_t 
+bitmap_alloc:maxix:u_int32_t 
+bitmap_alloc:offset:u_int32_t 
+bitmap_alloc:mask:WORD_TYPE 
+bitmap_alloc:offset:u_int32_t 
+bitmap_mark:b:struct bitmap *
+bitmap_mark:index:u_int32_t 
+
+bitmap_mark:ix:u_int32_t 
+bitmap_mark:mask:WORD_TYPE 
+bitmap_unmark:b:struct bitmap *
+bitmap_unmark:index:u_int32_t 
+
+bitmap_unmark:ix:u_int32_t 
+bitmap_unmark:mask:WORD_TYPE 
+bitmap_isset:b:struct bitmap *
+bitmap_isset:index:u_int32_t 
+
+bitmap_isset:ix:u_int32_t 
+bitmap_isset:mask:WORD_TYPE 
+bitmap_destroy:b:struct bitmap *
+
+bitmap_equal:a:struct bitmap *
+bitmap_equal:b:struct bitmap *
+
+bitmap_equal:ix:u_int32_t 
+bitmap_equal:maxix:u_int32_t 
+bitmap_nr_allocated:b:struct bitmap *
+
+bitmap_nr_allocated:i:int 
+bitmap_nr_allocated:nr:int 
+:zero[BLOCK_SIZE]:static char 
+write_blocks:sb:struct super_block *
+write_blocks:blocks:char *
+write_blocks:start:int 
+write_blocks:nr:int 
+
+write_blocks:pos:long 
+zero_blocks:sb:struct super_block *
+zero_blocks:start:int 
+zero_blocks:nr:int 
+
+zero_blocks:i:int 
+read_blocks:sb:struct super_block *
+read_blocks:blocks:char *
+read_blocks:start:int 
+read_blocks:nr:int 
+
+read_blocks:pos:long 
+testfs_get_csum:sb:struct super_block *
+testfs_get_csum:block_nr:int 
+
+testfs_write_csum:sb:struct super_block *
+testfs_write_csum:block_nr:int 
+
+testfs_write_csum:nr:int 
+testfs_write_csum:table:char * 
+        write_blocks(sb, table + (nr * BLOCK_SIZE), WARNING
+testfs_put_csum:sb:struct super_block *
+testfs_put_csum:phy_block_nr:int 
+testfs_put_csum:csum:int 
+
+testfs_put_csum:block_nr:int 
+testfs_calculate_csum:buf:const char * 
+testfs_calculate_csum:size:const int 
+
+testfs_calculate_csum:ibuf:const int * 
+testfs_calculate_csum:count:const int 
+testfs_calculate_csum:csum:int 
+testfs_calculate_csum:i:int 
+testfs_verify_csum:sb:struct super_block *
+testfs_verify_csum:phy_block_nr:int 
+
+testfs_verify_csum:block[BLOCK_SIZE]:char 
+testfs_verify_csum:csum:int 
+testfs_verify_csum:block_nr:int 
+testfs_next_dirent:dir:struct inode *
+testfs_next_dirent:offset:int *
+
+testfs_next_dirent:ret:int 
+testfs_next_dirent:d:struct dirent 
+testfs_next_dirent:dp:struct dirent *
+testfs_find_dirent:dir:struct inode *
+testfs_find_dirent:inode_nr:int 
+
+testfs_find_dirent:d:struct dirent *
+testfs_find_dirent:offset:int 
+testfs_find_dirent:ret:int 
+testfs_find_dirent:d:struct dirent *
+	ret = testfs_write_data(dir, offset, (char *) d,WARNING
+testfs_find_dirent:sizeof struct dirent  + len  
+testfs_add_dirent:dir:struct inode *
+testfs_add_dirent:name:char *
+testfs_add_dirent:inode_nr:int 
+
+testfs_add_dirent:d:struct dirent *
+testfs_add_dirent:p_offset:int 
+testfs_add_dirent:found:int 
+testfs_add_dirent:ret:int 
+testfs_add_dirent:len:int 
+testfs_remove_dirent_allowed:sb:struct super_block *
+testfs_remove_dirent_allowed:inode_nr:int 
+
+testfs_remove_dirent_allowed:dir:struct inode *
+testfs_remove_dirent_allowed:offset:int 
+testfs_remove_dirent_allowed:d:struct dirent *
+testfs_remove_dirent_allowed:ret:int 
+testfs_remove_dirent:sb:struct super_block *
+testfs_remove_dirent:dir:struct inode *
+testfs_remove_dirent:name:char *
+
+testfs_remove_dirent:d:struct dirent *
+testfs_remove_dirent:p_offset:int 
+testfs_remove_dirent:offset:int 
+testfs_remove_dirent:inode_nr:int 
+testfs_remove_dirent:ret:int 
+		ret = testfs_write_data(dir, p_offset, (char *) d,WARNING
+testfs_remove_dirent:sizeof struct dirent  + d->d_name_len  
+testfs_create_empty_dir:sb:struct super_block *
+testfs_create_empty_dir:p_inode_nr:int 
+testfs_create_empty_dir:cdir:struct inode *
+
+testfs_create_empty_dir:ret:int 
+testfs_create_file_or_dir:sb:struct super_block *
+testfs_create_file_or_dir:dir:struct inode *
+testfs_create_file_or_dir:type:inode_type 
+testfs_create_file_or_dir:name:char *
+
+testfs_create_file_or_dir:ret:int 
+testfs_create_file_or_dir:in:struct inode *
+testfs_create_file_or_dir:inode_nr:int 
+:calloc:using 
+:to:. assigns in 
+
+:p_inode_nr:int 
+testfs_pwd:sb:struct super_block *
+testfs_pwd:in:struct inode *
+
+testfs_pwd:p_inode_nr:int 
+testfs_pwd:p_in:struct inode *
+testfs_pwd:d:struct dirent *
+testfs_pwd:ret:int 
+testfs_dir_name_to_inode_nr:dir:struct inode *
+testfs_dir_name_to_inode_nr:name:char *
+
+testfs_dir_name_to_inode_nr:d:struct dirent *
+testfs_dir_name_to_inode_nr:offset:int 
+testfs_dir_name_to_inode_nr:ret:int 
+testfs_make_root_dir:sb:struct super_block *
+
+cmd_cd:sb:struct super_block *
+cmd_cd:c:struct context *
+
+cmd_cd:inode_nr:int 
+cmd_cd:dir_inode:struct inode *
+cmd_pwd:sb:struct super_block *
+cmd_pwd:c:struct context *
+
+testfs_ls:in:struct inode *
+testfs_ls:recursive:int 
+
+testfs_ls:offset:int 
+testfs_ls:d:struct dirent *
+testfs_ls:cin:struct inode *
+		printf("%s%s\n", D_NAME(d),WARNING
+cmd_ls:sb:struct super_block *
+cmd_ls:c:struct context *
+
+cmd_ls:inode_nr:int 
+cmd_ls:in:struct inode *
+cmd_ls:cdir:char *
+cmd_lsr:sb:struct super_block *
+cmd_lsr:c:struct context *
+
+cmd_lsr:inode_nr:int 
+cmd_lsr:in:struct inode *
+cmd_lsr:cdir:char *
+cmd_create:sb:struct super_block *
+cmd_create:c:struct context *
+
+cmd_create:i:int 
+cmd_create:ret:int 
+cmd_stat:sb:struct super_block *
+cmd_stat:c:struct context *
+
+cmd_stat:inode_nr:int 
+cmd_stat:in:struct inode *
+cmd_stat:i:int 
+
+cmd_rm:sb:struct super_block *
+cmd_rm:c:struct context *
+
+cmd_rm:inode_nr:int 
+cmd_rm:in:struct inode *
+cmd_mkdir:sb:struct super_block *
+cmd_mkdir:c:struct context *
+
+cmd_cat:sb:struct super_block *
+cmd_cat:c:struct context *
+
+cmd_cat:buf:char *
+cmd_cat:inode_nr:int 
+cmd_cat:in:struct inode *
+cmd_cat:ret:int 
+cmd_cat:sz:int 
+cmd_cat:i:int 
+cmd_catr:sb:struct super_block *
+cmd_catr:c:struct context *
+
+cmd_catr:cdir:char *
+cmd_catr:inode_nr:int 
+cmd_catr:in:struct inode *
+cmd_catr:tmp_inode:struct inode *
+cmd_catr:offset:int 
+cmd_catr:d:struct dirent *
+cmd_catr:ret:int 
+cmd_catr:sz:int 
+cmd_catr:buf:char *
+cmd_catr:cin:struct inode *
+cmd_write:sb:struct super_block *
+cmd_write:c:struct context *
+
+cmd_write:inode_nr:int 
+cmd_write:in:struct inode *
+cmd_write:size:int 
+cmd_write:ret:int 
+cmd_write:filename:char *
+cmd_write:content:char *
+cmd_owrite:sb:struct super_block *
+cmd_owrite:c:struct context *
+
+cmd_owrite:inode_nr:int 
+cmd_owrite:in:struct inode *
+cmd_owrite:size:int 
+cmd_owrite:ret:int 
+cmd_owrite:offset:long 
+cmd_owrite:filename:char *
+cmd_owrite:content:char *
+cmd_owrite:temp:char *
+inode::i_flags:int 
+inode::in:struct dinode 
+inode::i_nr:int 
+inode::hnode:struct hlist_node 
+inode::i_count:int 
+inode::sb:struct super_block *
+:inode_hash_table:static struct hlist_head *
+	hash_int:int:unsigned 
+
+	hash_int:inode_hash_size:static const int 
+
+inode_hash_init:i:int 
+
+inode_hash_destroy:i:int 
+inode_hash_find:sb:struct super_block *
+inode_hash_find:inode_nr:int 
+
+inode_hash_find:elem:struct hlist_node *
+inode_hash_find:in:struct inode *
+			&inode_hash_table[inode_hashfn(inode_nr)], hnode)WARNING
+inode_hash_insert:in:struct inode *
+
+inode_hash_remove:in:struct inode *
+
+testfs_inode_to_block_nr:in:struct inode *
+
+testfs_inode_to_block_nr:block_nr:int 
+testfs_inode_to_block_offset:in:struct inode *
+
+testfs_inode_to_block_offset:block_offset:int 
+testfs_read_inode_block:in:struct inode *
+testfs_read_inode_block:block:char *
+
+testfs_read_inode_block:block_nr:int 
+testfs_write_inode_block:in:struct inode *
+testfs_write_inode_block:block:char *
+
+testfs_write_inode_block:block_nr:int 
+testfs_get_block:in:struct inode *
+testfs_get_block:block:char *
+testfs_get_block:log_block_nr:int 
+
+testfs_get_block:phy_block_nr:int 
+testfs_allocate_block:in:struct inode *
+testfs_allocate_block:block:char *
+testfs_allocate_block:log_block_nr:int 
+
+testfs_allocate_block:indirect[BLOCK_SIZE]:char 
+testfs_allocate_block:phy_block_nr:int 
+testfs_allocate_block:[log_block_nr]:  int *  indirect 
+*testfs_get_inode:sb:struct super_block *
+*testfs_get_inode:inode_nr:int 
+
+*testfs_get_inode:block[BLOCK_SIZE]:char 
+*testfs_get_inode:block_offset:int 
+*testfs_get_inode:in:struct inode *
+testfs_sync_inode:in:struct inode *
+
+testfs_sync_inode:block[BLOCK_SIZE]:char 
+testfs_sync_inode:block_offset:int 
+testfs_put_inode:in:struct inode *
+
+testfs_inode_get_size:in:struct inode *
+
+testfs_inode_get_type:in:struct inode *
+
+testfs_inode_get_nr:in:struct inode *
+
+testfs_inode_get_sb:in:struct inode *
+
+testfs_create_inode:sb:struct super_block *
+testfs_create_inode:type:inode_type 
+testfs_create_inode:inp:struct inode **
+
+testfs_create_inode:in:struct inode *
+testfs_create_inode:inode_nr:int 
+testfs_remove_inode:in:struct inode *
+
+testfs_read_data:in:struct inode *
+testfs_read_data:start:int 
+testfs_read_data:buf:char *
+testfs_read_data:size:const int 
+
+testfs_read_data:block[BLOCK_SIZE]:char 
+testfs_read_data:done:int 
+testfs_read_data:block_nr:int 
+testfs_read_data:copy_size:int 
+testfs_write_data:in:struct inode *
+testfs_write_data:start:int 
+testfs_write_data:buf:char *
+testfs_write_data:size:const int 
+
+testfs_write_data:block[BLOCK_SIZE]:char 
+testfs_write_data:done:int 
+testfs_write_data:block_nr:int 
+testfs_write_data:copy_size:int 
+testfs_write_data:csum:int 
+testfs_write_data:orig_size:int 
+testfs_truncate_data:in:struct inode *
+testfs_truncate_data:size:const int 
+
+testfs_truncate_data:i:int 
+testfs_truncate_data:s_block_nr:int 
+testfs_truncate_data:e_block_nr:int 
+testfs_truncate_data:block[BLOCK_SIZE]:char 
+testfs_truncate_data:block_nr:int 
+testfs_truncate_data:[i]:  int *  block 
+testfs_check_inode:sb:struct super_block *
+testfs_check_inode:b_freemap:struct bitmap *
+testfs_check_inode:in:struct inode *
+
+testfs_check_inode:size:int 
+testfs_check_inode:i:int 
+testfs_check_inode:block[BLOCK_SIZE]:char 
+testfs_check_inode:block_nr:int 
+testfs_check_inode:block_nr:int 
+usage:progname:char *
+
+main:argc:int 
+main:argv[]:char *
+
+main:sb:struct super_block *
+main:ret:int 
+testfs_make_super_block:file:char *
+
+testfs_make_super_block:sb:struct super_block *
+testfs_make_inode_freemap:sb:struct super_block *
+
+testfs_make_block_freemap:sb:struct super_block *
+
+testfs_make_csum_table:sb:struct super_block *
+
+testfs_make_inode_blocks:sb:struct super_block *
+
+testfs_make_inode_blocks:assert  BLOCK_SIZE % sizeof struct dinode   
+testfs_init_super_block:file:const char *
+testfs_init_super_block:corrupt:int 
+testfs_init_super_block:sbp:struct super_block **
+
+testfs_init_super_block:sb:struct super_block *
+testfs_init_super_block:block[BLOCK_SIZE]:char 
+testfs_init_super_block:ret:int 
+testfs_init_super_block:sock:int 
+inode_hash_init:bytes:initializes inode_hash_table of size 256 
+
+testfs_write_super_block:sb:struct super_block *
+
+testfs_write_super_block:block[BLOCK_SIZE]:char 
+testfs_write_super_block:<:assert sizeof struct dsuper_block  
+testfs_close_super_block:sb:struct super_block *
+
+testfs_write_inode_freemap:sb:struct super_block *
+testfs_write_inode_freemap:inode_nr:int 
+
+testfs_write_inode_freemap:freemap:char *
+testfs_write_inode_freemap:nr:int 
+	write_blocks(sb, freemap + (nr * BLOCK_SIZE),WARNING
+testfs_write_block_freemap:sb:struct super_block *
+testfs_write_block_freemap:block_nr:int 
+
+testfs_write_block_freemap:freemap:char *
+testfs_write_block_freemap:nr:int 
+	write_blocks(sb, freemap + (nr * BLOCK_SIZE),WARNING
+testfs_get_block_freemap:sb:struct super_block *
+
+testfs_get_block_freemap:index:u_int32_t 
+testfs_get_block_freemap:ret:int 
+testfs_put_block_freemap:sb:struct super_block *
+testfs_put_block_freemap:block_nr:int 
+
+testfs_get_inode_freemap:sb:struct super_block *
+
+testfs_get_inode_freemap:index:u_int32_t 
+testfs_get_inode_freemap:ret:int 
+testfs_put_inode_freemap:sb:struct super_block *
+testfs_put_inode_freemap:inode_nr:int 
+
+testfs_alloc_block:sb:struct super_block *
+testfs_alloc_block:block:char *
+
+testfs_alloc_block:phy_block_nr:int 
+testfs_free_block:sb:struct super_block *
+testfs_free_block:block_nr:int 
+
+testfs_checkfs:sb:struct super_block *
+testfs_checkfs:i_freemap:struct bitmap *
+testfs_checkfs:b_freemap:struct bitmap *
+testfs_checkfs:inode_nr:int 
+
+testfs_checkfs:in:struct inode *
+testfs_checkfs:size:int 
+testfs_checkfs:size_roundup:int 
+testfs_checkfs:offset:int 
+testfs_checkfs:d:struct dirent *
+cmd_checkfs:sb:struct super_block *
+cmd_checkfs:c:struct context *
+
+cmd_checkfs:i_freemap:struct bitmap *
+cmd_checkfs:b_freemap:struct bitmap *
+cmd_checkfs:ret:int 
+:static int cmd_help struct super_block *, 		XXX COMMA DETECTED
+struct context *c  
+:static int cmd_quit struct super_block *, 		XXX COMMA DETECTED
+struct context *c  
+struct::name:const char *
+struct::int  *func  struct super_block *sb, 		XXX COMMA DETECTED
+struct context *c  
+struct::max_args:int 
+cmd_help:sb:struct super_block *
+cmd_help:c:struct context *
+
+cmd_help:i:int 
+cmd_quit:sb:struct super_block *
+cmd_quit:c:struct context *
+
+handle_command:sb:struct super_block *
+handle_command:c:struct context *
+handle_command:name:char * 
+handle_command:args:char * 
+
+handle_command:i:int 
+handle_command:j:int 
+handle_command:token:char * 
+usage:progname:const char * 
+
+args::disk:const char * 
+args::corrupt:int 
+*parse_arguments:argc:int 
+*parse_arguments:argv[]:char * const 
+
+*parse_arguments:running:int 
+*parse_arguments:option_index:int 
+*parse_arguments:c:int 
+main:argc:int 
+main:argv[]:char * const 
+
+main:sb:struct super_block *
+main:line:char *
+main:line_size:size_t 
+main:nr:ssize_t 
+main:ret:int 
+main:c:struct context 
+main:args:struct args * 
+main:name:char * 
+main:args:char * 
+testfs_tx_start:sb:struct super_block *
+testfs_tx_start:type:tx_type 
+
+testfs_tx_commit:sb:struct super_block *
+testfs_tx_commit:type:tx_type 
+
+:bitmap:struct 
+:int bitmap_create u_int32_t nbits, 		XXX COMMA DETECTED
+struct bitmap **bp  
+:void *bitmap_getdata struct bitmap *  
+:int bitmap_alloc struct bitmap *, 		XXX COMMA DETECTED
+u_int32_t *index  
+:void bitmap_mark struct bitmap *, 		XXX COMMA DETECTED
+u_int32_t index  
+:void bitmap_unmark struct bitmap *, 		XXX COMMA DETECTED
+u_int32_t index  
+:int bitmap_isset struct bitmap *, 		XXX COMMA DETECTED
+u_int32_t index  
+:void bitmap_destroy struct bitmap *  
+:int bitmap_equal struct bitmap *, 		XXX COMMA DETECTED
+struct bitmap *  
+:int bitmap_nr_allocated struct bitmap *  
+:void write_blocks struct super_block *sb, 		XXX COMMA DETECTED
+char *blocks, 		XXX COMMA DETECTED
+int start, 		XXX COMMA DETECTED
+int nr  
+:void zero_blocks struct super_block *sb, 		XXX COMMA DETECTED
+int start, 		XXX COMMA DETECTED
+int nr  
+:void read_blocks struct super_block *sb, 		XXX COMMA DETECTED
+char *blocks, 		XXX COMMA DETECTED
+int start, 		XXX COMMA DETECTED
+int nr  
+:super_block:struct 
+:int testfs_get_csum struct super_block *sb, 		XXX COMMA DETECTED
+int block_nr  
+:void testfs_put_csum struct super_block *sb, 		XXX COMMA DETECTED
+int block_nr, 		XXX COMMA DETECTED
+int csum  
+:int testfs_calculate_csum const char * buf, 		XXX COMMA DETECTED
+const int size  
+:int testfs_verify_csum struct super_block *sb, 		XXX COMMA DETECTED
+int block_nr  
+dirent::d_name_len:int 
+dirent::d_inode_nr:int 
+:struct dirent *testfs_next_dirent struct inode *dir, 		XXX COMMA DETECTED
+int *offset  
+:int testfs_dir_name_to_inode_nr struct inode *dir, 		XXX COMMA DETECTED
+char *name  
+:int testfs_make_root_dir struct super_block *sb  
+:/:all rights reserved. *
+
+
+__attribute__:extern void __fslice_read_block void *addr, 		XXX COMMA DETECTED
+size_t size, 		XXX COMMA DETECTED
+int nr  
+
+__attribute__:extern void __fslice_write_block void *addr, 		XXX COMMA DETECTED
+size_t size, 		XXX COMMA DETECTED
+int nr  
+
+__attribute__:extern void __fslice_name void *name, 		XXX COMMA DETECTED
+int len  
+
+__attribute__:extern void __fslice_data void *content, 		XXX COMMA DETECTED
+int len  
+
+dinode::i_type:inode_type 
+dinode::i_size:int 
+dinode::i_mod_time:int 
+dinode::i_block_nr[NR_DIRECT_BLOCKS]:int 
+dinode::i_indirect:int 
+:struct inode *testfs_get_inode struct super_block *sb, 		XXX COMMA DETECTED
+int inode_nr  
+:void testfs_sync_inode struct inode *in  
+:void testfs_put_inode struct inode *in  
+:int testfs_inode_get_size struct inode *in  
+:inode_type testfs_inode_get_type struct inode *in  
+:int testfs_inode_get_nr struct inode *in  
+:struct super_block *testfs_inode_get_sb struct inode *in  
+:struct inode **inp  
+:void testfs_remove_inode struct inode *in  
+:int testfs_read_data struct inode *in, 		XXX COMMA DETECTED
+int start, 		XXX COMMA DETECTED
+char *buf, 		XXX COMMA DETECTED
+const int size  
+:int testfs_write_data struct inode *in, 		XXX COMMA DETECTED
+int start, 		XXX COMMA DETECTED
+char *name, 		XXX COMMA DETECTED
+const int size  
+:void testfs_truncate_data struct inode *in, 		XXX COMMA DETECTED
+const int size  
+:struct inode *in  
+: type *    char * __mptr - offsetof type,member 		XXX COMMA DETECTED
+   
+list_head::prev:struct list_head *next, 		XXX COMMA DETECTED
+*
+
+INIT_LIST_HEAD:list:struct list_head *
+
+list_add:new:struct list_head *
+list_add:head:struct list_head *
+
+list_add_tail:new:struct list_head *
+list_add_tail:head:struct list_head *
+
+__list_del:prev:struct list_head * 
+__list_del:next:struct list_head * 
+
+list_del:entry:struct list_head *
+
+list_empty:head:const struct list_head *
+
+
+list_is_singular:head:const struct list_head *
+
+list_is_singular:new_first:struct list_head *
+list_is_singular:first:struct list_head *
+list_is_singular:last:struct list_head *
+hlist_head::first:struct hlist_node *
+hlist_node::pprev:struct hlist_node *next, 		XXX COMMA DETECTED
+**
+INIT_HLIST_NODE:h:struct hlist_node *
+
+hlist_empty:h:const struct hlist_head *
+
+hlist_add_head:n:struct hlist_node *
+hlist_add_head:h:struct hlist_head *
+
+hlist_add_head:first:struct hlist_node *
+hlist_del:n:struct hlist_node *
+
+hlist_del:next:struct hlist_node *
+hlist_del:pprev:struct hlist_node **
+hlist_replace:old:struct hlist_node *
+hlist_replace:new:struct hlist_node *
+
+hlist_replace:next:struct hlist_node *
+hlist_replace:pprev:struct hlist_node **
+hash_int:val:unsigned int 
+hash_int:bits:unsigned int 
+
+hash_int:hash:unsigned int 
+dsuper_block::inode_freemap_start:int 
+dsuper_block::block_freemap_start:int 
+dsuper_block::csum_table_start:int 
+dsuper_block::inode_blocks_start:int 
+dsuper_block::data_blocks_start:int 
+dsuper_block::modification_time:int 
+super_block::sb:struct dsuper_block 
+:inode_freemap:struct bitmap *
+:block_freemap:struct bitmap *
+:csum_table:int *
+:struct super_block *testfs_make_super_block char *file  
+:void testfs_make_inode_freemap struct super_block *sb  
+:void testfs_make_block_freemap struct super_block *sb  
+:void testfs_make_csum_table struct super_block *sb  
+:void testfs_make_inode_blocks struct super_block *sb  
+:struct super_block **sbp  
+:void testfs_write_super_block struct super_block *sb  
+:void testfs_close_super_block struct super_block *sb  
+:int testfs_get_inode_freemap struct super_block *sb  
+:void testfs_put_inode_freemap struct super_block *sb, 		XXX COMMA DETECTED
+int inode_nr  
+:int testfs_alloc_block struct super_block *sb, 		XXX COMMA DETECTED
+char *block  
+:int testfs_free_block struct super_block *sb, 		XXX COMMA DETECTED
+int block_nr  
+:super_block:struct 
+:inode:struct 
+context::nargs:int 
+context::cmd[MAX_ARGS+1]:char *
+context::cur_dir:struct inode *
+:int cmd_cd struct super_block *, 		XXX COMMA DETECTED
+struct context *c  
+:int cmd_pwd struct super_block *, 		XXX COMMA DETECTED
+struct context *c  
+:int cmd_ls struct super_block *, 		XXX COMMA DETECTED
+struct context *c  
+:int cmd_lsr struct super_block *, 		XXX COMMA DETECTED
+struct context *c  
+:int cmd_create struct super_block *, 		XXX COMMA DETECTED
+struct context *c  
+:int cmd_stat struct super_block *, 		XXX COMMA DETECTED
+struct context *c  
+:int cmd_rm struct super_block *, 		XXX COMMA DETECTED
+struct context *c  
+:int cmd_mkdir struct super_block *, 		XXX COMMA DETECTED
+struct context *c  
+:int cmd_cat struct super_block *, 		XXX COMMA DETECTED
+struct context *c  
+:int cmd_catr struct super_block *, 		XXX COMMA DETECTED
+struct context *c  
+:int cmd_write struct super_block *, 		XXX COMMA DETECTED
+struct context *c  
+:int cmd_owrite struct super_block *, 		XXX COMMA DETECTED
+struct context *c  
+:int cmd_checkfs struct super_block *, 		XXX COMMA DETECTED
+struct context *c  
+:super_block:struct 
+:void testfs_tx_start struct super_block *sb, 		XXX COMMA DETECTED
+tx_type type  
+:void testfs_tx_commit struct super_block *sb, 		XXX COMMA DETECTED
+tx_type type  

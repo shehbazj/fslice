@@ -1,3 +1,5 @@
+#!/usr/bin/python
+
 """ 
 
 Automate annotation generation
@@ -17,6 +19,8 @@ g) determine fsconst [OPTIONAL]
 import os
 from getAllocatedBytes import getAllocatedBytes
 from nonTypedBlocks import getTypeInfo
+from nonTypedBlocks import generatePointerMaps
+from getFieldAnnotation import getFieldAnnotation
 
 traceFile = "/tmp/testfs.py"
 
@@ -29,15 +33,24 @@ Input:
     typedBlocks : list of all block numbers that contain pointers
 """
 
-def printFSStructSizes(blockIntervalSet, blockAllocationCountSet, nonTypedBlocks, typedBlocks):
+def printFSStructSizes(blockIntervalSet, blockAllocationCountSet, nonTypedBlocks, typedBlocks, MapAll):
     for block, items in blockIntervalSet.items():
         print 'BLOCK :' , block
         print 'FSSTRUCT : ', blockIntervalSet[block], ' COUNT : ', blockAllocationCountSet[block]
-        if str(block) in nonTypedBlocks:
-            print 'DATA'
-        else:
-            print 'METADATA'
+        for srcBlock, destBlock in MapAll.items():
+            if 'b'+str(block)+'.' in srcBlock:
+                print 'POINTER ', srcBlock, 'DEST BLOCK(S) ',destBlock
+                if set(destBlock) < set(nonTypedBlocks):
+                    print 'TYPE : DATA_POINTER'
+                else:
+                    print 'TYPE : METADATA_POINTER'
+        if str(block) in fieldAnnotations and fieldAnnotations[str(block)]:
+            print 'FIELD ',fieldAnnotations[str(block)]
 
+def removeDuplicates(dupMap):
+    for key,value in dupMap.items():
+        dupMap[key] = set(dupMap[key])
+    return dupMap
 
 if __name__ == "__main__":
     """ Main Start """
@@ -48,8 +61,20 @@ if __name__ == "__main__":
 
     nonTypedBlocks = []
     typedBlocks = []
-
-    print "processing getAllocatedBytes"
+        
+    #print "processing getAllocatedBytes"
     (blockContents, blockIntervalSet, blockAllocationCountSet) = getAllocatedBytes(traceFile)
+
+    blockIntervalSet = removeDuplicates(blockIntervalSet)
+
+    print "processing get Type Info"
     (typedBlocks,nonTypedBlocks) = getTypeInfo()
-    printFSStructSizes(blockIntervalSet, blockAllocationCountSet ,nonTypedBlocks,typedBlocks)
+    print "get Maps"
+    (MapTtoT, MapTtoNT) = generatePointerMaps(typedBlocks,nonTypedBlocks)
+    print "get Field Annotations"
+    MapAll = dict(MapTtoT.items() + MapTtoNT.items())
+    fieldAnnotations = getFieldAnnotation(MapAll)
+
+    fieldAnnotations = removeDuplicates(fieldAnnotations)
+
+    printFSStructSizes(blockIntervalSet, blockAllocationCountSet ,nonTypedBlocks,typedBlocks, MapAll)
