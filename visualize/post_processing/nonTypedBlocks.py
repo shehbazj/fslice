@@ -9,6 +9,7 @@ from forwardTraceReferencesSubelements import forwardTraceReferencesSubelements
 from getAllocatedBytes import getAllocatedBytes
 from collections import defaultdict
 from getSourceBlock import getSourceBlock
+from getIntermediateICMPs import getIntermediateICMPs
 
 traceFile = "/tmp/testfs.py"
 
@@ -53,6 +54,7 @@ MapTtoNT = defaultdict(list)
 MapTtoT = defaultdict(list) 
 blockTaintDictionary = defaultdict(list) # <BNum - t1,t2,t3>
 typedBlockTaintList = [] 
+srcBlkTaintAsICMP = []
     
 def usage():
 	print "usage ./nonTypedBlocks.py operations blockTaints TaintBlockFile"
@@ -92,7 +94,7 @@ def initDataStructures(): # <tNo BlockNo>
                         offsetTaint = line.split(",")[3].split('t')[1]
                         taintBlockMap[taint] = block
                         taintOffsetToBlock[offsetTaint] = block
-                        blockTaintDictionary[block].append(taint)	
+                        blockTaintDictionary[block].append(taint)
 	return (taintBlockMap, blockTaintDictionary, taintOffsetToBlock)
 
 # taintOffsetToBlock is a map of taintOffset -> block
@@ -134,7 +136,7 @@ def getTypeInfo():
 			typedBlockTaintList.append(taint)
 			while block in nonTypedBlocks:
 				nonTypedBlocks.remove(block)
-	return (list(sorted(set(typedBlocks))), list(sorted(set(nonTypedBlocks))))
+	return (list(sorted(set(typedBlocks))), list(sorted(set(nonTypedBlocks))), taintBlockMap)
 
 def markLeafBlocks(MapTtoNT):
 	global blockDPMap
@@ -695,6 +697,24 @@ def generatePointerMaps(typedBlocks, nonTypedBlocks):
 				blockDestToSrcMap[int(destinationBlock)].append(blk)
         return (MapTtoT, MapTtoNT)
 
+# returns list of all source taints that are referred in ICMP instructions while approaching
+# the destination taint.
+
+def getSourceTaintInICMPs(taintBlockMap):
+    # get all block taints.
+    # get all blocks source block taints.
+    # get all ICMP instructions, and their operator blocks between source and destination blocks.
+    # if ICMP is present, get taint of the ICMP comparator instruction
+
+    for taint, blocks in taintBlockMap.items():
+#        print taint, blocks
+        srcBlockTaint = getIntermediateICMPs(taint)
+       # print srcBlockTaint
+        if srcBlockTaint is not None:
+            srcBlkTaintAsICMP.extend(srcBlockTaint)
+    return list(set(srcBlkTaintAsICMP))
+    
+
 if __name__ == "__main__":
 	""" Main Start """
 
@@ -702,7 +722,7 @@ if __name__ == "__main__":
 	typedBlocks = []
 
 	print "derive Non-Typed and Typed Blocks"
-	(typedBlocks, nonTypedBlocks) = getTypeInfo()
+	(typedBlocks, nonTypedBlocks, taintBlockMap) = getTypeInfo()
 	print "NON-TYPED OR UNINITIALIZED BLOCKS"
 	print nonTypedBlocks
 	
@@ -713,6 +733,9 @@ if __name__ == "__main__":
 	# generate backTraces
 
         (MapTtoT, MapTtoNT) = generatePointerMaps(typedBlocks, nonTypedBlocks)
+
+        srcBlkTaintAsICMP = getSourceTaintInICMPs(taintBlockMap)
+        print "SRC Block Taint as ICMP = ",srcBlkTaintAsICMP
 
 	print "MAP T to T"
 	for index in MapTtoT:

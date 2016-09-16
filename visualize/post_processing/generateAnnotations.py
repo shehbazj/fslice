@@ -61,6 +61,7 @@ if __name__ == "__main__":
 
     nonTypedBlocks = []
     typedBlocks = []
+    taintBlockMap = {}
         
     #print "processing getAllocatedBytes"
     (blockContents, blockIntervalSet, blockAllocationCountSet) = getAllocatedBytes(traceFile)
@@ -68,12 +69,12 @@ if __name__ == "__main__":
     #blockIntervalSet = removeDuplicates(blockIntervalSet)
 
     print "processing get Type Info"
-    (typedBlocks,nonTypedBlocks) = getTypeInfo()
+    (typedBlocks,nonTypedBlocks,taintBlockMap) = getTypeInfo()
     print "get Maps"
     (MapTtoT, MapTtoNT) = generatePointerMaps(typedBlocks,nonTypedBlocks)
     print "get Field Annotations"
     MapAll = dict(MapTtoT.items() + MapTtoNT.items())
-    fieldAnnotations = getFieldAnnotation(MapAll)
+    fieldAnnotations = getFieldAnnotation(MapAll, taintBlockMap)
 
     #fieldAnnotations = removeDuplicates(fieldAnnotations)
 

@@ -2,6 +2,7 @@ import sys
 import os
 import re
 from collections import defaultdict
+from nonTypedBlocks import getSourceTaintInICMPs
 
 """
  Collect all taints involved in ICMP Operations
@@ -89,7 +90,13 @@ def taintDoesBinaryOperation(taint):
 
 #ICMPBlock 509 64 35 # 509 - taint number of compared instruction, 64 block number 35 taint of comparator value
 
-def getFieldAnnotation(MapAll):
+#def taintInBacktrace(taint):
+    
+
+def getFieldAnnotation(MapAll, taintBlockMap):
+    # get all source block taints that are used as ICMP instructions while reaching
+    # to their destinaition block
+    referredSrcTaints = getSourceTaintInICMPs(taintBlockMap)
     blockField = defaultdict(list)
     with open(traceFile, 'r') as f:
         input_lines = f.readlines()
@@ -104,9 +111,13 @@ def getFieldAnnotation(MapAll):
                     blockNumber = taint_Blocknumber_Comparatortaint[2]
                     comparatorTaint = taint_Blocknumber_Comparatortaint[3].rstrip()
                     annotation = getAnnotation(taint)
-                    #if taint being compared is that of a constant V or a memory allocation M, it cannot be a 
+                    #if taint being compared is that of a constant V or a memory allocation M, it cannot be  
                     #field value. the annotation that has field value is only an O object or a B block
                     if annotation == 'M' or annotation == 'V':
+                        continue
+                    # if taint is not being referred between source and destination block, 
+                    # do not process this as a potential field annotation
+                    if taint not in referredSrcTaints:
                         continue
                     elif annotation == 'O':
                         taintLine = getTaintLine(taint)
@@ -126,7 +137,7 @@ if __name__ == "__main__":
     
     mapAll = defaultdict(list)
     print "calling : getFieldAnnotation"
-    blockField = getFieldAnnotation(mapAll)
+    blockField = getFieldAnnotation(mapAll, taintBlockMap)
     for blockNum,Offset in blockField.items():
         print blockNum,Offset
     if mapAll is None:

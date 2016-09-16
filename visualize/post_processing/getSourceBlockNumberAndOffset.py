@@ -59,4 +59,4 @@ def getSourceBlockNumberAndOffset(taint_val,trace_file):
 	return (None,None)
 
 if __name__ == "__main__":
-    print getSourceBlockNumberAndOffset(sys.argv[0],"/tmp/testfs.py")
+    print getSourceBlockNumberAndOffset(sys.argv[1],"/tmp/testfs.py")
