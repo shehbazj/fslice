@@ -17,12 +17,15 @@ g) determine fsconst [OPTIONAL]
 """
 
 import os
+from collections import defaultdict
 from getAllocatedBytes import getAllocatedBytes
 from nonTypedBlocks import getTypeInfo
 from nonTypedBlocks import generatePointerMaps
 from getFieldAnnotation import getFieldAnnotation
 
 traceFile = "/tmp/testfs.py"
+
+FSStructMap = defaultdict(list)
 
 """
 Prints each block content in the form block Number, offset , size
@@ -47,6 +50,26 @@ def printFSStructSizes(blockIntervalSet, blockAllocationCountSet, nonTypedBlocks
         if str(block) in fieldAnnotations and fieldAnnotations[str(block)]:
             print 'FIELD ',fieldAnnotations[str(block)]
 
+def createFSStructs(blockIntervalSet, blockAllocationCountSet, nonTypedBlocks, typedBlocks, MapAll):
+    # block Interval Set: ['0-3', '4-7', '8-11', '12-15', '16-19', '20-23', '24-27', '28-31', '32-35', '36-39', '40-43', '44-47', '48-51']
+    # block Allocation Count Set: ['4', '4', '4', '4', '4', '4', '4', '4', '4', '4', '4', '4', '4']
+        
+    for block, items in blockIntervalSet.items():
+        for pos in range(0, len(items)):
+            offsetInterval = blockIntervalSet[block][pos]
+            start = offsetInterval.split('-')[0]
+            end = offsetInterval.split('-')[1]
+            key = str(block) + '-' + start + '-' + end
+            structureSize = int(end) - int(start) + 1
+            FSStruct = ['D'] * int(structureSize)
+            FSStructMap[key] = FSStruct
+
+    keylist = FSStructMap.keys()
+    keylist.sort()    
+    for key in keylist:
+        print key, '-' , FSStructMap[key]
+
+                                    
 def removeDuplicates(dupMap):
     for key,value in dupMap.items():
         dupMap[key] = set(dupMap[key])
@@ -79,3 +102,4 @@ if __name__ == "__main__":
     #fieldAnnotations = removeDuplicates(fieldAnnotations)
 
     printFSStructSizes(blockIntervalSet, blockAllocationCountSet ,nonTypedBlocks,typedBlocks, MapAll)
+    createFSStructs(blockIntervalSet, blockAllocationCountSet, nonTypedBlocks, typedBlocks, MapAll)

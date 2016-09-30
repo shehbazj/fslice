@@ -13,7 +13,7 @@ cat /tmp/testfs.py | grep -e "CALL STACK" -e "B" > callStackAndBlockFile.tmp
 while read line; 
 do
 	if [[ $line == *","* ]]; then
-		echo $line | cut -d"," -f2 >> blockTrace.tmp
+		echo $line | cut -d"=" -f1 >> blockTrace.tmp
 	elif [[ $line == *":"* ]]; then
 		echo $line | cut -d":" -f2 >> blockTrace.tmp
 	fi	
