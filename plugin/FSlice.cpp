@@ -506,9 +506,10 @@ void FSliceModulePass::runOnICmp(BasicBlock *B, ICmpInst *I) {
 	auto &IList = B->getInstList();
 	auto LT = LoadTaint(I, I->getOperand(0));
 	auto RT = LoadTaint(I, I->getOperand(1));
+	//auto OP = getTaint(ConstantInt::get( IntPtrTy, I->getSignedPredicate(), false));
 
-	auto Op = CreateFunc(VoidPtrTy, "__fslice_run_on_icmp","", IntPtrTy, IntPtrTy);
-	std::vector <Value *> args = {LT, RT};
+	auto Op = CreateFunc(VoidPtrTy, "__fslice_run_on_icmp","", IntPtrTy, IntPtrTy/*, IntPtrTy*/);
+	std::vector <Value *> args = {LT, RT/*, OP*/};
 	auto TV = CallInst::Create(Op, args);
 	IList.insert(I, TV);
 //	IList.insert(I, TV); 	

@@ -1,3 +1,5 @@
+#!/usr/bin/python
+
 # gives all blocks whose sub elements have not been accessed
 # usage ./nonTypedBlocks.py operations blockTaints TaintBlockFile
 

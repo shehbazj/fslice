@@ -65,3 +65,5 @@ $DIR/llvm/build/bin/clang++ -c $1.opt.bc -o $1.opt.o
 # create an exe out of the intermediate optimized file
 
 $DIR/llvm/build/bin/clang++ -o $1.exe $1.opt.o $LDFLAGS
+
+echo "$1.exe created"

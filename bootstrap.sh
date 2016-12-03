@@ -23,6 +23,11 @@ if [ ! -d $DIR/whole-program-llvm ] ; then
     git clone https://github.com/travitch/whole-program-llvm.git
 fi
 
+
+# XXX DO NOT XXX XXX XXX XXX FORGET USING XXX RTTI XXX option
+# XXX its going to give you error: XXX 
+# undefined symbol: _ZTIN4llvm10ModulePassE
+# 
 #mkdir $DIR/llvm/build
 #cd $DIR/llvm/build
 #cmake ../ \
@@ -36,9 +41,10 @@ fi
 make clean; make all
 
 # Get testfs and instrument it.
- git clone git@github.com:shehbazj/testfs.git
+# git clone git@github.com:shehbazj/testfs.git
 ./env.sh make -C testfs clean all
 ./run.sh testfs/testfs
+#./run.sh testfs/mktestfs
 
 echo "Usage:"
 echo "$DIR/testfs/mktestfs /tmp/fs"

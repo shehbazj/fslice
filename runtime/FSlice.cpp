@@ -246,8 +246,10 @@ extern "C" Taint __fslice_load_arg(uint64_t i) {
 extern "C" void __fslice_run_on_icmp(Taint Taint1, Taint Taint2) {
 	if(gObjectBlockTaintIds.find(Taint1.id) != gObjectBlockTaintIds.end())
 		std::cerr << "#ICMPBlock " << Taint1.id << " " << gTaintBlockMap[gObjectBlockTaintIds[Taint1.id]] << " " << Taint2.id << std::endl;
-	if(gObjectBlockTaintIds.find(Taint2.id) != gObjectBlockTaintIds.end())
+	else if(gObjectBlockTaintIds.find(Taint2.id) != gObjectBlockTaintIds.end())
 		std::cerr << "#ICMPBlock " << Taint2.id << " " << gTaintBlockMap[gObjectBlockTaintIds[Taint2.id]] << " " << Taint1.id << std::endl;
+	else
+		std::cerr << "#icmp" << Taint1.id << "-" << Taint2.id << std::endl;
 }
 
 // store tainted value in gArgs ordered list.
@@ -397,12 +399,20 @@ extern "C" Taint __fslice_op2(const char *op, Taint t1, Taint t2) {
   if (!t.id) {
     t = {gId++, 0, false};
     std::cerr << "t" << t.id << "=A(\"" << op << "\",t" << t1.id
-              << ",t" << t2.id << ", " << t.id << ")" << std::endl;
+              << ",t" << t2.id << ", " << t.id << ")";
+	if(gObjectBlockTaintIds.find(t1.id) != gObjectBlockTaintIds.end())
+		std::cerr << "#SWITCH " << t1.id << " " << gTaintBlockMap[gObjectBlockTaintIds[t1.id]] << std::endl;
+	else
+		std::cerr << std::endl;
   }
 #else
   Taint t = {gId++, 0, false};
   std::cerr << "t" << t.id << "=A(\"" << op << "\",t" << t1.id
             << ",t" << t2.id << ", " << t.id << ")" << std::endl;
+	if(gObjectBlockTaintIds.find(t2.id) != gObjectBlockTaintIds.end())
+		std::cerr << "#SWITCH " << t2.id << " " << gTaintBlockMap[gObjectBlockTaintIds[t2.id]] << std::endl;
+	else
+		std::cerr << std::endl;
 #endif
   return t;
 }

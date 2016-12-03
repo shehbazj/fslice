@@ -46,7 +46,7 @@ createBlockVisualizeFile() {
 	fileReverse=$DEST_DIR/$blockNumber\.$blockTaint\.reverse   # temporary file name, contains reverse of block backtrace
 	fileName=$DEST_DIR/$blockNumber\.$blockTaint\.visualize   # valid python visualize file
 
-	python ../trace.py -b $blockTaint $TRACE_FILE > $fileBack
+	python traceWithICMP.py -b $blockTaint $TRACE_FILE > $fileBack
 
 	#tac $fileBack > $fileReverse
 	#rm $fileBack

@@ -13,6 +13,7 @@ clean:
 
 $(DIR)/build:
 	@mkdir $(DIR)/build
+	# FSLICE_DIR is used by CMakeLists.txt file
 	@cd $(DIR)/build ; cmake -G "Unix Makefiles" -DFSLICE_DIR=$(DIR)  ..
 
 $(DIR)/build/libFSlice.so: $(DIR)/build
