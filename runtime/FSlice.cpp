@@ -24,6 +24,18 @@ std::string tostring(const T& t) {
 	return ss.str();
 }
 
+std::unordered_map<uint64_t, std::string> Comparator ({
+{32 ,"ICMP_EQ" },
+{33 ,"ICMP_UGT" },
+{34 ,"ICMP_UGE" },
+{35 ,"ICMP_ULT" },
+{36 ,"ICMP_ULE" },
+{37 ,"ICMP_SGT" },
+{38 ,"ICMP_SGE" },
+{39 ,"ICMP_SLT" },
+{40 , "ICMP_SLE" }
+});
+
 std::stack<std::string> callStack;
 
 // Attribute packed is for space compaction. Any object instance created for Taint 
@@ -75,6 +87,14 @@ static std::unordered_map<uint64_t,uint64_t> gObjectBlockTaintIds;
 static std::unordered_map<uint64_t,uint64_t> gPrevBlock;
 // op = char value. every op has a <object, taint> value
 static std::unordered_map<const char *,std::unordered_map<uint64_t,Taint>> gBinaryOps;
+
+// symbolic table containing address and different symbol values Xoff : a, aaaa, ...
+static std::unordered_map<uint64_t,std::vector<std::string>> sAddrValueMap;
+// symbolic table containing taint and address map
+static std::unordered_map<uint64_t,std::vector<uint64_t>> sTaintAddrMap;
+// symbolic table containing address and expression 1:1 mapping eg. Xoff : strlen
+static std::unordered_map<uint64_t, std::string> sAddrExprMap;
+
 static unsigned gId = 1;
 
 extern "C" Taint __fslice_value(uint64_t);
@@ -243,13 +263,8 @@ extern "C" Taint __fslice_load_arg(uint64_t i) {
 // If there is a check FIELD == srcBlock, we wont be able to detect that
 // TODO : FIX this - fix is trivial, but I need some sleep...
 
-extern "C" void __fslice_run_on_icmp(Taint Taint1, Taint Taint2) {
-	if(gObjectBlockTaintIds.find(Taint1.id) != gObjectBlockTaintIds.end())
-		std::cerr << "#ICMPBlock " << Taint1.id << " " << gTaintBlockMap[gObjectBlockTaintIds[Taint1.id]] << " " << Taint2.id << std::endl;
-	else if(gObjectBlockTaintIds.find(Taint2.id) != gObjectBlockTaintIds.end())
-		std::cerr << "#ICMPBlock " << Taint2.id << " " << gTaintBlockMap[gObjectBlockTaintIds[Taint2.id]] << " " << Taint1.id << std::endl;
-	else
-		std::cerr << "#icmp" << Taint1.id << "-" << Taint2.id << std::endl;
+extern "C" void __fslice_run_on_icmp(Taint Taint1, Taint Taint2, uint64_t Pred) {
+	std::cerr << "ICMP(t" << Taint1.id << ",t" << Taint2.id << ",'"<< Comparator[Pred] << "')" << std::endl;
 }
 
 // store tainted value in gArgs ordered list.
@@ -348,6 +363,18 @@ extern "C" void *__fslice_malloc(uint64_t size) {
   }					// by default it is false.
   __fslice_store_ret({0,0,false});	// init gArgs list and gReturn with 0,0,false
   return ptr;
+}
+
+extern "C" int __fslice_strlen(uint64_t addr)
+{
+	int len = strlen((const char *)addr);
+	auto symbolVec = sAddrValueMap[addr];
+	if(!symbolVec.empty() && gShadow[addr].id != 0) {
+		Taint t = {gId++, 0,false};
+		std::cerr << "t" << t.id << "=STRLEN(t" << gShadow[addr].id << ")" << std::endl;
+		__fslice_store_ret(t);
+	}
+	return len;
 }
 
 extern "C" void *__fslice_calloc(uint64_t num, uint64_t size) {
@@ -561,8 +588,19 @@ extern "C" void __fslice_data(uint64_t addr, uint64_t len) {
   }
 }
 
+extern "C" void __fslice_mark(uint64_t addr) {
+	auto &mt = gShadow[addr];
+	if (mt.id == 0){
+		mt = {gId++, 0, false};
+		gShadow[addr] = mt;
+	}
+	std::cerr << "t" << mt.id << "=" << "SYMBOLIC_STR()" << std::endl;
+	sAddrValueMap[addr].push_back(std::string("a")); 
+	sTaintAddrMap[mt.id].push_back(addr);
+}
+
 extern "C" void __fslice_clear() {
-//	printf("%s\n", __func__);
+	printf("%s\n", __func__);
 	gShadow.clear();
 	gObjects.clear();
 	gValues.clear();
@@ -570,5 +608,8 @@ extern "C" void __fslice_clear() {
 	gBlockTaintIds.clear();
 	gPrevBlock.clear();
 	gBinaryOps.clear();
+//	sTaintAddrMap.clear();
+//	sAddrExprMap.clear();
+//	sAddrValueMap.clear();
 	gId=1;
 }

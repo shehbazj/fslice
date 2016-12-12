@@ -153,10 +153,15 @@ bool FSliceModulePass::runOnModule(Module &M_) {
         F->setName("__fslice_malloc");
       } else if (F->getName() == "calloc") {
         F->setName("__fslice_calloc");
+      } else if (F->getName() == "mark") {
+	F->setName("__fslice_mark");
+      } else if (F->getName() == "strlen") {
+	F->setName("__fslice_strlen");
+//	printFunctionName(F->getName().data());
       }
     } else {
-      runOnFunction(F->getName().data());
-    }
+        runOnFunction(F->getName().data());
+    }   
   }
   return true;
 }
@@ -366,8 +371,8 @@ void FSliceModulePass::runOnInstructions(void) {
     } else if (BinaryOperator *BI = dyn_cast<BinaryOperator>(II.I)) {
       runOnBinary(II.B, BI);
     } else if (ICmpInst *IC = dyn_cast<ICmpInst>(II.I)) {
-			runOnICmp(II.B, IC);	
-		}
+      runOnICmp(II.B, IC);	
+    }
   }
 }
 
@@ -449,10 +454,12 @@ void FSliceModulePass::runOnCall(BasicBlock *B, CallInst *CI) {
 
   if (CI->user_empty()) return;
 
+  Instruction* st;
   if (auto RT = getTaint(CI)) {
     auto LoadFunc = CreateFunc(IntPtrTy, "__fslice_load_ret", "");
     auto TR = CallInst::Create(LoadFunc);
-    IList.insertAfter(CI, new StoreInst(TR, RT));
+	st = new StoreInst(TR, RT);
+    IList.insertAfter(CI, st);
     IList.insertAfter(CI, TR);
   }
 }
@@ -506,10 +513,11 @@ void FSliceModulePass::runOnICmp(BasicBlock *B, ICmpInst *I) {
 	auto &IList = B->getInstList();
 	auto LT = LoadTaint(I, I->getOperand(0));
 	auto RT = LoadTaint(I, I->getOperand(1));
-	//auto OP = getTaint(ConstantInt::get( IntPtrTy, I->getSignedPredicate(), false));
+	auto Pred = I->getUnsignedPredicate();
 
-	auto Op = CreateFunc(VoidPtrTy, "__fslice_run_on_icmp","", IntPtrTy, IntPtrTy/*, IntPtrTy*/);
-	std::vector <Value *> args = {LT, RT/*, OP*/};
+    	auto Predic = ConstantInt::get(IntPtrTy, Pred, false);
+	auto Op = CreateFunc(VoidPtrTy, "__fslice_run_on_icmp","", IntPtrTy, IntPtrTy, IntPtrTy);
+	std::vector <Value *> args = {LT, RT, Predic};
 	auto TV = CallInst::Create(Op, args);
 	IList.insert(I, TV);
 //	IList.insert(I, TV); 	
