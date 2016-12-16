@@ -78,6 +78,8 @@ static std::unordered_map<uint64_t,Taint> gShadow;
 static std::unordered_map<uint64_t,Taint> gValues;
 static std::unordered_map<uint64_t,Taint> gObjects;
 
+static std::vector<uint64_t> gTaintValue;
+
 // map from taint Id to Block Number
 static std::unordered_map<uint64_t,uint64_t> gTaintBlockMap;
 static std::unordered_map<uint64_t,Taint> gBlocks;
@@ -89,11 +91,9 @@ static std::unordered_map<uint64_t,uint64_t> gPrevBlock;
 static std::unordered_map<const char *,std::unordered_map<uint64_t,Taint>> gBinaryOps;
 
 // symbolic table containing address and different symbol values Xoff : a, aaaa, ...
-static std::unordered_map<uint64_t,std::vector<std::string>> sAddrValueMap;
+static std::unordered_map<uint64_t,uint64_t> sAddrTaintMap;
 // symbolic table containing taint and address map
-static std::unordered_map<uint64_t,std::vector<uint64_t>> sTaintAddrMap;
-// symbolic table containing address and expression 1:1 mapping eg. Xoff : strlen
-static std::unordered_map<uint64_t, std::string> sAddrExprMap;
+static std::unordered_map<uint64_t,std::vector<uint64_t>> sTaintAddrsMap;
 
 static unsigned gId = 1;
 
@@ -176,7 +176,11 @@ static Taint Load(uint64_t addr, uint64_t size) {
   std::cerr << "t" << t.id << "=O(t" << gShadow[addr].id << "," << t.id;
   for (auto i = 0U; i < size; ++i) {
     const auto mt = gShadow[addr + i];
-    std::cerr << sep << "t" << mt.id << "[" << mt.offset << "]";
+	if(std::find(gTaintValue.begin(), gTaintValue.end(), mt.id) == gTaintValue.end())
+	    std::cerr << sep << "t" << mt.id << "[" << mt.offset << "]";
+	else
+	    std::cerr << sep << "t" << mt.id ;
+	
     //sep = ",";
   }
 //	Object refers to a block taint
@@ -287,11 +291,15 @@ extern "C" void *__fslice_memset(void *dst, int val, uint64_t size) {
 					// the main purpose why memset was called!
 }
 
+bool isSymbol(uint64_t taintId){
+	if(sTaintAddrsMap[taintId].empty())
+		return false;
+	return true;
+}
+
 // taint destination address with the same value as that at source
 extern "C" void *__fslice_memmove(void *dst, const void *src, uint64_t size) {
 	SaveErrno save_errno;
-//  std::cerr << "# Invoking __fslice_memmove(" << dst << ", " << src << ", " << size
-//		    << ")\n";
 
 	const auto daddr = reinterpret_cast<uint64_t>(dst);
 	const auto saddr = reinterpret_cast<uint64_t>(src);
@@ -310,19 +318,34 @@ extern "C" void *__fslice_memmove(void *dst, const void *src, uint64_t size) {
 		if (newTaint != 0)
 			break;
 	}
-// S is a statically assigned memory region - a constant string or a stack allocated memory (local variable)
+	// S is a statically assigned memory region - a constant string or a stack allocated memory (local variable)
 	if (newTaint != 0)
 		std::cerr << "t" << newTaint << "=S(" << size << ", " << newTaint << ")"
 				<< std::endl;
 
 	for (auto i = 0U; i < size; ++i) {
 		const auto bt = gShadow[saddr + i];
-		if (gShadow[daddr + i].id != 0) {
-			std::cerr << "t" << gShadow[daddr + i].id << "[" << gShadow[daddr + i].offset << "]=t"
+		//if (gShadow[daddr + i].id != 0 && gShadow[daddr + i].id != 1) {
+		auto destinationId = gShadow[daddr + i].id;
+		if( (std::find(gTaintValue.begin(), gTaintValue.end(), destinationId) == gTaintValue.end()) ){
+			// destination is not tainted with a V() Id
+			if (gShadow[daddr + i].id != 0 ) {
+				//auto symVec = sTaintAddrsMap[bt.id];
+				if( (std::find(gTaintValue.begin(), gTaintValue.end(), bt.id) == gTaintValue.end()) && 
+					(isSymbol(bt.id))){
+					// taint neither a value V() or a symbol S(), print offset
+					std::cerr << "t" << gShadow[daddr + i].id << "[" << gShadow[daddr + i].offset << "]=t"
 					<< bt.id << "[" << bt.offset << "] # fslice_memmove"
 					<< std::endl;
-		} else {
-			std::cerr << "# XXX Destination address taint Id is 0" << std::endl;
+				}else{
+				// dont print offset
+					std::cerr << "t" << gShadow[daddr + i].id << "[" << gShadow[daddr + i].offset << "]=t"
+					<< bt.id << " # fslice_memmove"
+					<< std::endl;
+				}
+			} else {
+				std::cerr << "# XXX Destination address taint Id is 0" << std::endl;
+			}
 		}
 		gShadow[daddr + i] = {bt.id, bt.offset, false};
 	}
@@ -330,6 +353,11 @@ extern "C" void *__fslice_memmove(void *dst, const void *src, uint64_t size) {
 			<< gShadow[daddr].offset << ":Size|" << size << std::endl;
 	__fslice_store_ret( { 0, 0, false }); // initialize all gArgs. intialize gRet to 0,0,false
 	return memmove(dst, src, size);
+}
+
+void addSymbol(uint64_t taintId){
+	if(isSymbol(taintId) == false)
+		sTaintAddrsMap[taintId].push_back(0);
 }
 
 extern "C" void *__fslice_memcpy(void *dst, const void *src, uint64_t size) {
@@ -368,10 +396,12 @@ extern "C" void *__fslice_malloc(uint64_t size) {
 extern "C" int __fslice_strlen(uint64_t addr)
 {
 	int len = strlen((const char *)addr);
-	auto symbolVec = sAddrValueMap[addr];
-	if(!symbolVec.empty() && gShadow[addr].id != 0) {
+	auto taintId = sAddrTaintMap[addr];
+	if(taintId != 0 && gShadow[addr].id != 0) {
+		// address is symbolic, since it exists in sAddrTaintMap
+		// create new taint Id for storing addr string's length
 		Taint t = {gId++, 0,false};
-		std::cerr << "t" << t.id << "=STRLEN(t" << gShadow[addr].id << ")" << std::endl;
+		std::cerr << "t" << t.id << "=STRLEN(t" << gShadow[addr].id << ",'t" << t.id << "')" << std::endl;
 		__fslice_store_ret(t);
 	}
 	return len;
@@ -401,6 +431,8 @@ extern "C" Taint __fslice_value(uint64_t val) {
 		t = { gId++, 0, false};
 		std::cerr << "t" << t.id << "=V(" << val << ", " << t.id << ")" << " # "
 				<< TaintAsString(t) << std::endl;
+		gValues[val] = t;
+		gTaintValue.push_back(t.id);
 	}
 //	std::cerr << "#taint id = " << t.id << std::endl;
 	return t;
@@ -408,6 +440,7 @@ extern "C" Taint __fslice_value(uint64_t val) {
 	/*if (val) { */
 		Taint t = {gId++, 0, false};
 		std::cerr << "t" << t.id << "=V(" << val << ", " << t.id << ")" << " # " << TaintAsString(t) << std::endl;
+		gTaintValue.push_back(t.id);
 		return t;
 	/*} else {
 		return {0, 0, false};
@@ -441,6 +474,9 @@ extern "C" Taint __fslice_op2(const char *op, Taint t1, Taint t2) {
 	else
 		std::cerr << std::endl;
 #endif
+  if(isSymbol(t1.id) || isSymbol(t2.id)){
+	addSymbol(t.id);
+  }
   return t;
 }
 
@@ -547,9 +583,15 @@ extern "C" void __fslice_write_block(uint64_t addr, uint64_t size, uint64_t nr) 
 		}
         continue;
     }
+	
+	if(std::find(gTaintValue.begin(), gTaintValue.end(), bt.id) == gTaintValue.end()){
     std::cerr << "t" << t.id << "[" << i << "]=t" << bt.id << "["
 			  << bt.offset << "] # fslice_write_block(" << addr << ", "
 			  << size << ", " << nr << ")" << std::endl;
+	}else{
+    std::cerr << "t" << t.id << "[" << i << "]=t" << bt.id << "# fslice_write_block(" << addr << ", "
+			  << size << ", " << nr << ")" << std::endl;
+	}
   }
 }
 
@@ -594,9 +636,9 @@ extern "C" void __fslice_mark(uint64_t addr) {
 		mt = {gId++, 0, false};
 		gShadow[addr] = mt;
 	}
-	std::cerr << "t" << mt.id << "=" << "SYMBOLIC_STR()" << std::endl;
-	sAddrValueMap[addr].push_back(std::string("a")); 
-	sTaintAddrMap[mt.id].push_back(addr);
+	std::cerr << "t" << mt.id << "=" << "SYMBOLIC_STR('t" << mt.id << "')" << std::endl;
+	sAddrTaintMap[addr] = mt.id; 
+	sTaintAddrsMap[mt.id].push_back(addr);
 }
 
 extern "C" void __fslice_clear() {
@@ -608,8 +650,7 @@ extern "C" void __fslice_clear() {
 	gBlockTaintIds.clear();
 	gPrevBlock.clear();
 	gBinaryOps.clear();
-//	sTaintAddrMap.clear();
-//	sAddrExprMap.clear();
-//	sAddrValueMap.clear();
+	sTaintAddrsMap.clear();
+	sAddrTaintMap.clear();
 	gId=1;
 }
