@@ -10,25 +10,18 @@ class SYMBOLIC_STR:
     def __init__(self, taintNo):
         seedstr = 'a'
         self._data = seedstr
-        self._len = len(seedstr)
         self._selfTaint = taintNo
         self._relation = ''
-        self._relationTaint = taintNo
-        self._relationvalue = 0
+        self._relationTaint = self
+        self._relationOperand = 0
+
     def printf(self):
         print "STRING = ", self._data
         print "LENGTH = ", self._len
         print "SELF TAINT = ", self._selfTaint
         print "RELATION = ", self._relation
-        print "RELATION TAINT = ", self._relationTaint
+        print "RELATION TAINT = ", self._relationTaint._selfTaint
         print "RELATION VALUE = ", self._relationvalue
-
-    #def __init__(self):
-    #    self._relation = ''
-
-class SYMBOLIC_INT:
-    def __init__(self):
-        self._num = 0
 
 def num_to_taint_object(str):
 	return getattr(sys.modules[__name__], str)
@@ -36,16 +29,12 @@ def num_to_taint_object(str):
 def STRLEN(sym, strlenTaint):
     if sym.__class__.__name__ == SYMBOLIC_STR.__name__:
         newstr = SYMBOLIC_STR(sym._selfTaint)
-        newstr._data = sym._data
-        newstr._len = sym._len
+        newstr._data = len(sym._data)
         newstr._selfTaint = strlenTaint
         newstr._relation = "strlen"
-        newstr._relationTaint = sym._selfTaint
-        newstr._relationvalue = 0 
+        newstr._relationTaint = sym
+        newstr._relationOperand = 0
         return newstr
-#    if type(sym).__name__ == 'str':
-#        return len(sym)
-#    assert(0)
 
 def N(size, discard):
     return [0] * size
@@ -56,16 +45,98 @@ def D(size, discard):
 def genSym(length):
     return [] * length
 
+def evaluateExpression(op1, op2, op):
+    if op == "ICMP_EQ":
+        return op1 == op2
+    elif op == "ICMP_UGT":
+        return op1 > op2
+    elif op == "ICMP_UGE":
+        return op1 >= op2
+    elif op == "ICMP_ULT":
+        return op1 < op2
+    elif op == "ICMP_ULE":
+        return op1 <= op2
+    elif op == "ICMP_SGT":
+        return op1 > op2
+    elif op == "ICMP_SGE":
+        return op1 >= op2
+    elif op == "ICMP_SLT":
+        return op1 < op2
+    elif op == "ICMP_SLE":
+        return op1 <= op2
+    else:
+        print "TODO: evaluateExpression for ", op1, op2, op
+
+def getSymOpValue(op1, op2, op, evaluateTo):
+    if evaluateTo == False:
+        op = complement(op)
+    # generate values of op1 for which op1 - op - op2 evaluates to True
+    if ((op is "ICMP_UGE") or (op is "ICMP_ULE") or (op is "ICMP_SGE") or (op is "ICMP_SLE") or(op is "ICMP_EQ")):
+        return op2
+    elif ((op is "ICMP_UGT") or (op is "ICMP_SGT")):
+        return op2 + 1
+    elif ((op is "ICMP_ULT") or (op is "ICMP_SLT")):
+        return op2 - 1
+    
+def invert(newValue, relation, relationOperand):
+    if relation == "strlen":
+        return 'a' * newValue
+    if relation == "add":
+        return newValue - relationOperand
+    if relation == "sub":
+        return newValue + relationOperand
+    if relation == "div":
+        return newValue * relationOperand
+    if relation == "mul":
+        return newValue / relationOperand
+
+def generateSymbol(symbol, newValue):
+    print "t",symbol._selfTaint
+  #  if symbol._relation != '':
+  #      symValue = invert(newValue, symbol._relation, symbol._relationOperand)
+  #      print symValue, "t", symbol._relationTaint, symbol._relation
+  #      generateSymbol(symbol._relationTaint, symValue)
+
+def generateConcreteValue(symOp, constOp, op):
+    if type(constOp).__name__ == 'int':
+        isExpressionFalse = evaluateExpression(symOp._data, constOp, op)
+        # if isExpressionFalse is False, we need to evaluate a value for symOp
+        # for which expression is True
+        # alternatively, for True expression, isExpresionFalse is False, so we
+        # generate symbol for which complement of the expression is True
+        # i.e. op1 - complement(op) - op2 is True
+        symOpValue = getSymOpValue(symOp._data, constOp, op, isExpressionFalse)
+        generateSymbol(symOp,symOpValue)
+    else:
+        print "TODO: generateConcreteValue() for non int op values", symOp._data, constOp, op
+
+def complement(op):
+    if op == "ICMP_EQ":
+        return "ICMP_NE"
+    elif op == "ICMP_UGT":
+        return "ICMP_ULE"
+    elif op == "ICMP_UGE":
+        return "ICMP_ULT"
+    elif op == "ICMP_ULT":
+        return "ICMP_UGE"
+    elif op == "ICMP_ULE":
+        return "ICMP_UGT"
+    elif op == "ICMP_SGT":
+        return "ICMP_SLE"
+    elif op == "ICMP_SGE":
+        return "ICMP_SLT"
+    elif op == "ICMP_SLT":
+        return "ICMP_SGE"
+    elif op == "ICMP_SLE":
+        return "ICMP_SGT"    
+
 def ICMP(op1, op2, op):
     if op1.__class__.__name__ == SYMBOLIC_STR.__name__:
-        if type(op2).__name__ == 'int':
-            if op == 'ICMP_ULE':
-                if ( op1._len < op2):
-                    print "CURRENT SYM: ", op1._data
-                    print "NEW SYM: ", genSym(op2)
-                else:
-                    print "CURRENT SYM: ", genSym(op2)
-                    print "NEW SYM: ", op1._data
+        print "SYMBOLIC COMPARISION ", op1._selfTaint, op2 , op
+        generateConcreteValue(op1, op2, op)
+    if op2.__class__.__name__ == SYMBOLIC_STR.__name__:
+        print "SYMBOLIC COMPARISION ", op1, op2._selfTaint, op
+        generateConcreteValue(op2, op1, complement(op))
 
 def V( a, b):
 	return a;
@@ -84,18 +155,6 @@ def operate(op, op1, op2):
 	else:
 		print "Undefined Binary Operation"
 
-#def generateLabel(op,op1,op2):
-#	global labelId
-#	labelId+=1
-#	label = "L"+str(labelId)
-#	if removeConstants is True:
-#		if isinstance(op1,int):
-#			op1 = 'C'
-#		if isinstance(op2,int):
-#			op2 = 'C'
-#	print label,op,op1,op2
-#	return label
-
 def S(size, discard):
     return [0] * size
 
@@ -104,55 +163,15 @@ def M(size, b, c,d, e=0):
 
 def A( op, op1, op2, retTaint):
         if op1.__class__.__name__ == SYMBOLIC_STR.__name__ and isinstance(op2,int):
-            oldlen  = op1._len
+            oldlen = op1._data
             newsym = SYMBOLIC_STR(retTaint)
-            newsym._len =  oldlen + op2
-            newsym._relation = "add"
-            newsym._relationTaint = op1._selfTaint
-            newsym._relationvalue = oldlen - newsym._len
-            newsym._data = genSym(newsym._len)
-#            newsym.printf()
+            newsym._data =  operate(op, op1._data, op2)
+            newsym._relation = op
+            newsym._relationTaint = op1
+            newsym._relationOperand = op2
+            newsym._selfTaint = retTaint
 	    return newsym
-
-#
-#	elif isinstance(op1,basestring) and isinstance(op2,int):
-#		if op2 == 0:
-#			#print op1
-#			return op1
-#		return generateLabel(op,op1,op2)
-#
-#	elif ((isinstance(op1,basestring) and isinstance(op2,list)) or
-#	(isinstance(op1,list) and isinstance(op2,basestring)) or
-#	(isinstance(op1,list) and isinstance(op2,list))):
-#		return generateLabel(op,op1,op2)
-#		
-#	elif isinstance(op1,list) and isinstance(op2, int):
-#            return 'L' 
         return [0] * 64
-#                print "op1 =",op1, "op2 = ", op2
-#		#if op2 == 0:
-#		#	print "returning ",op1
-#		#	return op1
-#		#print op,op1,op2
-#		mylist = []
-#		mylist.append(op)
-#		mylist.append('B')
-#		mylist.append(op1[-1])  # add block number
-#		mylist.append(op1[0])	# add block start
-#		mylist.append(op1[-2])	# add block end
-#		if removeConstants is True:
-#			mylist.append('C')
-#		else:
-#			mylist.append(op2)	# add op2
-#		labelId+=1
-#		label = "L" + str(labelId)
-#		print label,mylist
-#		return label
-#	else:
-#		print "No case matched for",op,op1,op2
-#		return []
-
-# returns list containing all indexes block number and block taint
 
 def B( bsize, bnum, bsizeTaint, bnumTaint, discard):
     return [0] *bsize
