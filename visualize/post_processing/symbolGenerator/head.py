@@ -2,6 +2,7 @@
 
 import itertools
 import sys
+import ctypes
 
 labelId = 0
 removeConstants = None
@@ -36,18 +37,11 @@ def STRLEN(sym, strlenTaint):
         newstr._relationOperand = 0
         return newstr
 
-def N(size, discard):
-    return [0] * size
-
-def D(size, discard):
-    return [0] * size
-
-def genSym(length):
-    return [] * length
-
 def evaluateExpression(op1, op2, op):
     if op == "ICMP_EQ":
         return op1 == op2
+    elif op == "ICMP_NE":
+        return op1 != op2
     elif op == "ICMP_UGT":
         return op1 > op2
     elif op == "ICMP_UGE":
@@ -77,25 +71,47 @@ def getSymOpValue(op1, op2, op, evaluateTo):
         return op2 + 1
     elif ((op is "ICMP_ULT") or (op is "ICMP_SLT")):
         return op2 - 1
+    elif op is "ICMP_NE":
+        if type(op2) is int:
+            return op2 + 1
+        elif type(op2) is str:
+            return str(unichr(int(op2) + 1))
+        else:
+            print "TODO : getSymOpValue", "ICMP_NE", op1 , op2, op, evaluateTo
+    else:
+        print "TODO: getSymOpValue"
+        
     
 def invert(newValue, relation, relationOperand):
     if relation == "strlen":
-        return 'a' * newValue
-    if relation == "add":
+        if newValue < 1000:
+            return 'a' * newValue
+        else:
+            print "string too long ", newValue
+    elif relation == "add":
         return newValue - relationOperand
-    if relation == "sub":
+    elif relation == "sub":
         return newValue + relationOperand
-    if relation == "div":
+    elif relation == "div":
         return newValue * relationOperand
-    if relation == "mul":
+    elif relation == "mul":
         return newValue / relationOperand
+    else:
+        print "nonInvertible expression for ", newValue, relation, relationOperand
+    
 
 def generateSymbol(symbol, newValue):
-    print "t",symbol._selfTaint
-  #  if symbol._relation != '':
-  #      symValue = invert(newValue, symbol._relation, symbol._relationOperand)
-  #      print symValue, "t", symbol._relationTaint, symbol._relation
-  #      generateSymbol(symbol._relationTaint, symValue)
+    #print "t",symbol._selfTaint
+    if symbol._relation != '':
+        #print 't',symbol._selfTaint, symbol._relationTaint._selfTaint , symbol._relation, symbol._relationOperand, newValue , symbol._data
+        symValue = invert(newValue, symbol._relation, symbol._relationOperand)
+        generateSymbol(symbol._relationTaint, symValue)
+    else:
+        if (type(newValue) == str):
+            print "NEW_SYMBOL = ", newValue
+        else:
+            print "NEW_SYMBOL = ",chr(newValue)
+##      print symValue, "t", symbol._relationTaint, symbol._relation
 
 def generateConcreteValue(symOp, constOp, op):
     if type(constOp).__name__ == 'int':
@@ -113,6 +129,8 @@ def generateConcreteValue(symOp, constOp, op):
 def complement(op):
     if op == "ICMP_EQ":
         return "ICMP_NE"
+    elif op == "ICMP_NE":
+        return "ICMP_EQ"
     elif op == "ICMP_UGT":
         return "ICMP_ULE"
     elif op == "ICMP_UGE":
@@ -132,14 +150,14 @@ def complement(op):
 
 def ICMP(op1, op2, op):
     if op1.__class__.__name__ == SYMBOLIC_STR.__name__:
-        print "SYMBOLIC COMPARISION ", op1._selfTaint, op2 , op
         generateConcreteValue(op1, op2, op)
     if op2.__class__.__name__ == SYMBOLIC_STR.__name__:
-        print "SYMBOLIC COMPARISION ", op1, op2._selfTaint, op
         generateConcreteValue(op2, op1, complement(op))
 
 def V( a, b):
-	return a;
+        if(a == 4294967295):
+            return -1
+        return a
 
 def operate(op, op1, op2):
 	if op is "add":
@@ -152,8 +170,20 @@ def operate(op, op1, op2):
 		return op1 / op2
         elif op is "sub":
                 return op1 - op2
+        elif op is "lshr":
+                return op1 >> op2
+        elif op is "urem" or op is "srem":
+                return op1 % op2
+        elif op is "xor":
+                return op1 ^ op2
+        elif op is "or":
+                return op1 | op2
+        elif op is "and":
+                return op1 & op2
+        elif op is "shl":
+                return op1 << op2
 	else:
-		print "Undefined Binary Operation"
+		print "Undefined Binary Operation", op1, op, op2
 
 def S(size, discard):
     return [0] * size
@@ -161,7 +191,7 @@ def S(size, discard):
 def M(size, b, c,d, e=0):
     return [0] * size
 
-def A( op, op1, op2, retTaint):
+def A(op, op1, op2, retTaint):
         if op1.__class__.__name__ == SYMBOLIC_STR.__name__ and isinstance(op2,int):
             oldlen = op1._data
             newsym = SYMBOLIC_STR(retTaint)
@@ -171,9 +201,12 @@ def A( op, op1, op2, retTaint):
             newsym._relationOperand = op2
             newsym._selfTaint = retTaint
 	    return newsym
-        return [0] * 64
+        elif type(op1) is int and type(op2) is int:
+            return operate(op, op1, op2)
+        else:
+            return [0] * 64
 
-def B( bsize, bnum, bsizeTaint, bnumTaint, discard):
+def B(bsize, bnum, bsizeTaint, bnumTaint, discard):
     return [0] *bsize
 #	#print 'B [',str(bnum),']'
 #	mylist = []
