@@ -51,3 +51,5 @@ echo "$DIR/testfs/mktestfs /tmp/fs"
 echo "$DIR/testfs/testfs.exe /tmp/fs 2> /tmp/testfs.py"
 echo "$DIR/visualize.sh /tmp/testfs.py"
 echo
+
+./init.sh < cmd

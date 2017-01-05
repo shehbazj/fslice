@@ -16,5 +16,6 @@ add_compile_options(-Wall)
 add_compile_options(-Werror)
 
 add_library( FSlice SHARED ${FSLICE_DIR}/plugin/FSlice.cpp )
+add_library( pathCounter SHARED ${FSLICE_DIR}/pathCounter/pathCounter.cpp )
 
-add_llvm_loadable_module(FSlice ${FSLICE_DIR}/plugin/FSlice.cpp)
+#add_llvm_loadable_module(FSlice ${FSLICE_DIR}/plugin/FSlice.cpp)
