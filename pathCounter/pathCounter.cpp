@@ -65,6 +65,7 @@ class pathCounter : public ModulePass {
   void runOnBinary(BasicBlock *B, BinaryOperator *I);
 	void runOnICmp(BasicBlock *B, ICmpInst *I);
   void traceFunctionCallGraph();
+  void getConvergenceFactor();
   void runOnIntrinsic(BasicBlock *B, MemIntrinsic *MI);
 	void printStack(std::stack <const char *> *bbStack);
 
@@ -77,6 +78,7 @@ class pathCounter : public ModulePass {
 	bool inStack(const char *element, std::stack<const char *> *bbStack);
 	const char * getAlternatePath(const char *currentBB, std::stack <const char *> *bbStack);
 
+	void printFunCallFromBB(const char *bbName);
   void track(Value *V);
   int marked(Value *V);
 
@@ -156,10 +158,37 @@ void pathCounter :: displayMap()
 	}	
 }
 
+void pathCounter :: printFunCallFromBB(const char *bbName)
+{
+	bool bracketPrinted = false;
+	for(auto &BB : *F){
+		if(!strcmp(BB.getName().data(),bbName)){
+			for(auto &I : BB){
+				if(CallInst *CI = dyn_cast<CallInst>(&I)) {
+					if(!bracketPrinted){
+						std::cerr << "(";
+						bracketPrinted = true;
+					} 
+					std::cerr << CI->getCalledFunction()->getName().data() << " " ;
+					// self recursion
+					if(!strcmp(CI->getCalledFunction()->getName().data(),bbName)){
+						std::cerr << "*" ;
+					}
+				}
+			}
+			if(bracketPrinted){
+				std::cerr << ")";
+			}
+			return;	
+		}
+	}
+}
+
 void pathCounter ::printStack(std::stack <const char *> *bbS)
 {
+	std::cerr << F->getName().data() << "():"; 
 	std::stack <const char *> temp;
-	if(bbS->empty()) 
+	if(bbS->empty())
 		std::cerr << "STACK IS ALREADY EMPTY" << std::endl;
 	while(!bbS->empty()){
 		const char * name = bbS->top();
@@ -170,10 +199,16 @@ void pathCounter ::printStack(std::stack <const char *> *bbS)
 		auto bbName = temp.top();
 		temp.pop();
 		std::cerr << bbName << "  ->  ";
+		printFunCallFromBB(bbName);
 		bbS->push(bbName);
 	}
 	std::cerr << std::endl;
 } 
+
+void pathCounter :: getConvergenceFactor()
+{
+	return;
+}
 
 bool pathCounter :: isLoopBack(const char *currentBB, std::stack <const char *> *bbStack){
 	std::stack <const char *> temp;
@@ -348,7 +383,9 @@ bool pathCounter::runOnModule(Module &M_) {
 	{
 		F = &F_;
 		if(!F->isDeclaration()){
-			traceFunctionCallGraph();
+		//	traceFunctionCallGraph();
+			getConvergenceFactor();
+		//	getBranchingFactor();
 		}
 	}
 
