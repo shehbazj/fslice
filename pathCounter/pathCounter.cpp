@@ -6,6 +6,7 @@
 #include <llvm/IR/Instructions.h>
 #include <llvm/IR/IntrinsicInst.h>
 #include <llvm/IR/LLVMContext.h>
+#include <llvm/IR/CFG.h>
 #include <llvm/IR/Module.h>
 #include <llvm/Pass.h>
 
@@ -65,9 +66,14 @@ class pathCounter : public ModulePass {
   void runOnBinary(BasicBlock *B, BinaryOperator *I);
 	void runOnICmp(BasicBlock *B, ICmpInst *I);
   void traceFunctionCallGraph();
-  void getConvergenceFactor();
+  void generateConvergenceFactor();
   void runOnIntrinsic(BasicBlock *B, MemIntrinsic *MI);
+	int getCF(BasicBlock *BB);
+
+	void displayCFMap();
 	void printStack(std::stack <const char *> *bbStack);
+	int  getConvergence(BasicBlock *BB);
+	int  getMaxConvergence(TerminatorInst *I);
 
 	void runOnBB(BasicBlock *BB);
 	void trackLoad(Value *I);
@@ -85,7 +91,11 @@ class pathCounter : public ModulePass {
   Value *getTaint(Value *V);
   Value *LoadTaint(Instruction *I, Value *V);
 
+	std::map<BasicBlock *, int> *CFMap = new std::map <BasicBlock *, int>;
   std::vector <Value *> trackTaint;
+	// map of functions and pointer to map of (BB,ConvergenceFactor)
+	// for each BB in that function.
+	std::map <const char *, void *> functionConvergenceFactorMap;
 
   // Creates a function returning void on some arbitrary number of argument
   // types.
@@ -205,8 +215,73 @@ void pathCounter ::printStack(std::stack <const char *> *bbS)
 	std::cerr << std::endl;
 } 
 
-void pathCounter :: getConvergenceFactor()
+int pathCounter :: getCF(BasicBlock *BB)
 {
+	int ret = -1;
+	for (auto it = CFMap->begin() ; it != CFMap->end() ; it++)
+	{
+		if(!strcmp(it->first->getName().data() , BB->getName().data())){
+			return it->second;
+		}
+	}
+	return ret;
+}
+
+int pathCounter :: getMaxConvergence(TerminatorInst *I)
+{
+	int max = 0;
+	for( unsigned i = 0 ; i < I->getNumSuccessors() ; i++)
+	{
+		// need a check for successors being part of a loop construct, in which case
+		// we loop once and look for alternate path
+
+		int conv = getCF(I->getSuccessor(i)); 
+		if(conv == -1){					// BB's CF not calculated already
+			conv = getConvergence(I->getSuccessor(i)); // then calculate convergence
+			CFMap->insert (std::pair<BasicBlock *, int >  (I->getSuccessor(i),conv));
+		}
+		if (conv > max){
+			max = conv;
+		}		
+	}
+	return max;
+}
+
+int pathCounter :: getConvergence(BasicBlock *BB)
+{
+	int numPred=0;
+	for (pred_iterator it = pred_begin(BB) ; it != pred_end(BB) ; it++){
+		numPred++;
+	}
+	if (numPred  > 1){ 	// termination of a branch instruction two paths meet here
+		return 1 + getMaxConvergence(BB->getTerminator());
+	}else {			// entry Basic Block or sequential block
+		return getMaxConvergence(BB->getTerminator());
+	}
+}
+
+void pathCounter:: displayCFMap()
+{
+	for(auto it = CFMap->begin() ; it != CFMap->end() ; it++)
+	{
+		std::cerr << it->first->getName().data() << " -> " << it->second << std::endl;
+	}	
+}
+
+/* Convergence factor of a basic block is the number of if.end conditions that
+ * follow a block. The more degree of convergence, the more number of path combinations 
+ * are possible
+ * */
+
+void pathCounter :: generateConvergenceFactor()
+{
+	auto StartBB = F->begin();
+	CFMap = new std::map <BasicBlock *, int>;
+	assert(StartBB->getName().data() != NULL);
+	int SBconv = getConvergence(StartBB);
+	CFMap->insert (std::pair<BasicBlock *, int >  (StartBB,SBconv));
+	displayCFMap();
+	delete CFMap;
 	return;
 }
 
@@ -384,7 +459,7 @@ bool pathCounter::runOnModule(Module &M_) {
 		F = &F_;
 		if(!F->isDeclaration()){
 		//	traceFunctionCallGraph();
-			getConvergenceFactor();
+			generateConvergenceFactor();
 		//	getBranchingFactor();
 		}
 	}
