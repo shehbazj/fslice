@@ -67,10 +67,13 @@ class pathCounter : public ModulePass {
 	void runOnICmp(BasicBlock *B, ICmpInst *I);
   void traceFunctionCallGraph();
   void generateConvergenceFactor();
+  void generateBranchingFactor();
   void runOnIntrinsic(BasicBlock *B, MemIntrinsic *MI);
 	int getCF(BasicBlock *BB);
+	int getBF(BasicBlock *BB);
 
 	void displayCFMap();
+	void displayBFMap();
 	void printStack(std::stack <const char *> *bbStack);
 	int  getConvergence(BasicBlock *BB);
 	int  getMaxConvergence(TerminatorInst *I);
@@ -92,6 +95,7 @@ class pathCounter : public ModulePass {
   Value *LoadTaint(Instruction *I, Value *V);
 
 	std::map<BasicBlock *, int> *CFMap = new std::map <BasicBlock *, int>;
+	std::map<BasicBlock *, int> *BFMap = new std::map <BasicBlock *, int>;
   std::vector <Value *> trackTaint;
 	// map of functions and pointer to map of (BB,ConvergenceFactor)
 	// for each BB in that function.
@@ -260,6 +264,24 @@ int pathCounter :: getConvergence(BasicBlock *BB)
 	}
 }
 
+int pathCounter :: getBF(BasicBlock *BB)
+{
+	auto TerminatorInst = BB->getTerminator();
+	int numSucc = TerminatorInst->getNumSuccessors();
+	if (numSucc == 0){
+		BFMap->insert(std::pair<BasicBlock *, int> (BB, 1));
+		return 1;
+	}else{
+		auto TerminatorInst = BB->getTerminator();
+		int currentBB_BF = 0;
+		for(int i = 0 ; i < numSucc ; i++){
+			currentBB_BF += getBF(TerminatorInst->getSuccessor(i));
+		}
+		BFMap->insert( std::pair<BasicBlock *, int> (BB, currentBB_BF) );
+		return currentBB_BF;
+	}
+}
+
 void pathCounter:: displayCFMap()
 {
 	for(auto it = CFMap->begin() ; it != CFMap->end() ; it++)
@@ -267,6 +289,15 @@ void pathCounter:: displayCFMap()
 		std::cerr << it->first->getName().data() << " -> " << it->second << std::endl;
 	}	
 }
+
+void pathCounter:: displayBFMap()
+{
+	for(auto it = BFMap->begin() ; it != BFMap->end() ; it++)
+	{
+		std::cerr << it->first->getName().data() << " -> " << it->second << std::endl;
+	}
+}
+
 
 /* Convergence factor of a basic block is the number of if.end conditions that
  * follow a block. The more degree of convergence, the more number of path combinations 
@@ -444,6 +475,18 @@ void pathCounter:: traceFunctionCallGraph()
 	generatePaths(&bbStack);
 }
 
+void pathCounter :: generateBranchingFactor()
+{
+	auto StartBB = F->begin();
+	BFMap = new std::map <BasicBlock *, int>;
+	assert(StartBB->getName().data() != NULL);
+	int StartBBcount = getBF(StartBB);
+	CFMap->insert (std::pair<BasicBlock *, int >  (StartBB,StartBBcount));
+	displayBFMap();
+	delete BFMap;
+	return;
+}
+
 bool pathCounter::runOnModule(Module &M_) {
         M = &M_;
         C = &(M->getContext());
@@ -459,8 +502,8 @@ bool pathCounter::runOnModule(Module &M_) {
 		F = &F_;
 		if(!F->isDeclaration()){
 		//	traceFunctionCallGraph();
-			generateConvergenceFactor();
-		//	getBranchingFactor();
+		//	generateConvergenceFactor();
+			generateBranchingFactor();
 		}
 	}
 
