@@ -17,8 +17,15 @@
 #include <string>
 #include <stack>
 
+//#define DEBUG
+
 using namespace llvm;
 
+#ifdef DEBUG
+#  define D(x) x
+#else
+#  define D(x)
+#endif
 
 // Set of llvm values that represent a logical variable.
 struct VSet {
@@ -268,58 +275,34 @@ int pathCounter :: getConvergence(BasicBlock *BB)
 	}
 }
 
-//BasicBlock * pathCounter :: getBB(const char *name)
-//{
-//	for ( auto &B : *F){
-//		if(B.getName().data() == name){
-//			return &B;
-//		}
-//	}
-//	std::cerr << "trying to retrieve BB for " << F->getName().data() << "():BBName " << name << std::endl;
-//	assert(0);
-//}
-
 int pathCounter :: getBF(BasicBlock *BB, std::stack <const char *> *bbStack)
 {
 	auto TerminatorInst = BB->getTerminator();
 	int numSucc = TerminatorInst->getNumSuccessors();
-	if (numSucc == 0){
-		BFMap->insert(std::pair<BasicBlock *, int> (BB, 1));
-		return 1;
+	//std::cerr << __func__ << "(): " << BB->getName().data() << std::endl;
+	if(isLoopBack(BB->getName().data(),bbStack)){
+		auto alternateBB = getAlternatePath(BB, bbStack);
+		bbStack	->push(alternateBB->getName().data());
+		auto currentBB_BF = getBF(alternateBB, bbStack);
+		bbStack->pop();	
+		return currentBB_BF;
 	}else{
-		auto TerminatorInst = BB->getTerminator();
-		int currentBB_BF = 0;
-		for(int i = 0 ; i < numSucc ; i++){
-			if(TerminatorInst->getSuccessor(i)->getName().data() == NULL)
-				continue;
-			// if successor is loop, choose alternate path and return
-			if(isLoopBack(TerminatorInst->getSuccessor(i)->getName().data(), bbStack)){
-				std::string s (TerminatorInst->getSuccessor(i)->getName().data());
-				if (s.size() == 0)
-					continue;
-				s.append("*");
-				bbStack->push(s.data());
-				auto alternateBB = getAlternatePath(TerminatorInst->getSuccessor(i), bbStack);
-				if(alternateBB == NULL){
-					std::cerr << "WARNING, NO ALTERNATE PATH for "
-						<< TerminatorInst->getSuccessor(i)->getName().data() << " , returning " << std::endl;
-					while(!bbStack->empty())
-						bbStack->pop();
-					return 0;
-				}
-				bbStack->push(alternateBB->getName().data());
-				currentBB_BF += getBF(alternateBB, bbStack);
-				bbStack->pop();
-				bbStack->pop();
-				//printStack(bbStack);
-			}else{
+		if (numSucc == 0){
+			BFMap->insert(std::pair<BasicBlock *, int> (BB, 1));
+			D(std::cerr << __func__ << "(): " << "reached terminator block " << BB->getName().data() << std::endl;)
+			D(printStack(bbStack);)
+			return 1;
+		}else{
+			auto TerminatorInst = BB->getTerminator();
+			int currentBB_BF = 0;
+			for(int i = 0 ; i < numSucc ; i++){
 				bbStack->push(TerminatorInst->getSuccessor(i)->getName().data());
 				currentBB_BF += getBF(TerminatorInst->getSuccessor(i), bbStack);
 				bbStack->pop();
-			}		
+			}
+			BFMap->insert( std::pair<BasicBlock *, int> (BB, currentBB_BF) );
+			return currentBB_BF;
 		}
-		BFMap->insert( std::pair<BasicBlock *, int> (BB, currentBB_BF) );
-		return currentBB_BF;
 	}
 }
 
@@ -335,7 +318,7 @@ void pathCounter:: displayBFMap()
 {
 	for(auto it = BFMap->begin() ; it != BFMap->end() ; it++)
 	{
-	//	if(!strcmp(it->first->getName().data(),"entry"))
+		if(!strcmp(it->first->getName().data(),"entry"))
 			std::cerr << it->first->getName().data() << " -> " << it->second << std::endl;
 	}
 }
@@ -361,20 +344,17 @@ void pathCounter :: generateConvergenceFactor()
 bool pathCounter :: isLoopBack(const char *currentBB, std::stack <const char *> *bbStack){
 	std::stack <const char *> temp;
 	bool bbIsLoopBack = false;
-	int loopBackCount = 0;
 	if(bbStack->empty()){
 		return false;
 	}
-	//assert(bbStack->size());
-	//printStack(bbStack);
 	// removing top element since its currentBB
 	else{
 		if(bbStack == NULL){
-			std::cerr << "Stack is null " << std::endl;
+			D(std::cerr << "Stack is null " << std::endl;)
 			return false;
 		}
 		if(bbStack -> top() == NULL){
-			std::cerr << "Stack top is null " << std::endl;
+			D(std::cerr << "Stack top is null " << std::endl;)
 			return false;
 		}
 		auto elem = bbStack->top();
@@ -385,16 +365,10 @@ bool pathCounter :: isLoopBack(const char *currentBB, std::stack <const char *> 
 			auto top = bbStack->top();
 			if(top == currentBB){
 				bbIsLoopBack = true;
-				loopBackCount++;
+				D(std::cerr << "Loop Back Found at block " << currentBB << std::endl;)
 			}
 			temp.push(top);
 			bbStack->pop();	
-			if(loopBackCount > 1){
-				std::cerr << "LoopBack Count " << loopBackCount << " exiting" << std::endl;
-				while(!bbStack->empty())
-					bbStack->pop();
-				return false;
-			}	
 		}
 		while(!temp.empty()){
 			auto top = temp.top();
@@ -445,35 +419,50 @@ BasicBlock * pathCounter:: getAlternatePath( BasicBlock *LoopBlock, std::stack <
 	const char *prev;
 	const char *LoopBlockName = LoopBlock->getName().data();
 
+	D(std::cerr << __func__ << "(): LoopbackBlock = " << LoopBlockName << std::endl;)
+
 	if(bbStack->empty()){
-		std::cerr << "STACK empty, returning" << std::endl;
+		D(std::cerr << "STACK empty, returning" << std::endl;)
 		return NULL;
 	}
+	// remove first loopback block from stack.
+	auto top = bbStack->top();
+	temp.push(top);
+	bbStack->pop();
+	
+	// search for the second loopback block.
 	while(!bbStack->empty()){
 		auto top = bbStack->top();
 		if(top == LoopBlockName){
+			D(std::cerr << "top is " << top << std::endl;)
 			break;	
 		}else{
 			prev = top;	// prev contains element traversed after LoopBlock
+			D(std::cerr << "top is " << top << " assigning prev " << prev << std::endl;)
 			temp.push(top);
 			bbStack->pop();
 		}
 	}
+	//std::cerr << "restoring stack " << std::endl;
 	while(!temp.empty()){
 		auto top = temp.top();
 		bbStack->push(top);
 		temp.pop();
 	}		
+	D(std::cerr << __func__ << "(): previous traversed block = " << prev << std::endl;)
 	auto TermInst = LoopBlock->getTerminator();
+	BasicBlock *prevBB;
 	for(unsigned i = 0; i < TermInst->getNumSuccessors() ; i++){
 		if(TermInst->getSuccessor(i)->getName().data() != prev){
+			D(std::cerr << __func__ << "(): returning alternate path " << TermInst->getSuccessor(i) << std::endl;)
 			return TermInst->getSuccessor(i);
-		}	
+		}else{
+			prevBB = TermInst->getSuccessor(i);
+		}
 	}
-	std::cerr << LoopBlock->getName().data() << "WARNING:Loop without alternate Path" << std::endl;
-	printStack(bbStack);
-//	assert(0);
-	return NULL;
+	
+	D(std::cerr << LoopBlock->getName().data() << "returning previous path " << prevBB->getName().data() << std::endl;)
+	return prevBB;
 }
 
 const char * pathCounter:: getAlternatePath(const char *currentBB, std::stack <const char *> *bbStack)
@@ -611,35 +600,12 @@ bool pathCounter::runOnModule(Module &M_) {
 		//	traceFunctionCallGraph();
 		//	generateConvergenceFactor();
 			std::cerr << F->getName().data() << std::endl;
-			if(strcmp(F->getName().data(), "testfs_dir_name_to_inode_nr_rec") &&
-			strcmp(F->getName().data(), "testfs_remove_dirent_allowed") &&
-			strcmp(F->getName().data(), "inode_hash_find") &&
-			strcmp(F->getName().data(), "handle_command") )
-				generateBranchingFactor();
+			generateBranchingFactor();
 		}
 	}
 
 	// get different basic block sequence of calls possible.
 
-        // do all tainting and tracking
-        //for (auto &F_ : M->functions())
-        //{
-  	//      F = &F_;
-  	//      if(!F->isDeclaration()){
-  	//	      runOnFunction();
-  	//      }
-        //}
-
-        //// link tracking
-        //for (auto &F_ : M->functions()) {
-  	//      F = &F_;
-  	//      for(auto &BB : *F){
-  	//	      std::cout << "calling runOnBB for " << F->getName().data() << std::endl;
-  	//	      runOnBB(&BB);
-  	//      }
-        //}
-
-        //// track all dependent variables
         return true;
 }
 
