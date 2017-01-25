@@ -74,7 +74,11 @@ class pathCounter : public ModulePass {
 	void runOnICmp(BasicBlock *B, ICmpInst *I);
   void traceFunctionCallGraph();
   void generateConvergenceFactor();
-  void generateBranchingFactor();
+  void getFunctionLevelBF();
+  void getModuleLevelBF();
+	bool markedProcessed();
+	bool processedFunctionCaller();
+	void analyseFunctionCalls();
   void runOnIntrinsic(BasicBlock *B, MemIntrinsic *MI);
   //BasicBlock *getBB(const char *name);
 	int getCF(BasicBlock *BB);
@@ -82,6 +86,7 @@ class pathCounter : public ModulePass {
 
 	void displayCFMap();
 	void displayBFMap();
+	void displayFunctionBFMap();
 	void printStack(std::stack <const char *> *bbStack);
 	int  getConvergence(BasicBlock *BB);
 	int  getMaxConvergence(TerminatorInst *I);
@@ -95,6 +100,8 @@ class pathCounter : public ModulePass {
 	bool inStack(const char *element, std::stack<const char *> *bbStack);
 	const char * getAlternatePath(const char *currentBB, std::stack <const char *> *bbStack);
 	BasicBlock * getAlternatePath(BasicBlock *ForLoopBlock, std::stack <const char *> *bbStack);
+	bool isTerminalFunction();
+	void getTerminalFunctions();
 
 	void printFunCallFromBB(const char *bbName);
   void track(Value *V);
@@ -105,6 +112,7 @@ class pathCounter : public ModulePass {
 
 	std::map<BasicBlock *, int> *CFMap = new std::map <BasicBlock *, int>;
 	std::map<BasicBlock *, int> *BFMap = new std::map <BasicBlock *, int>;
+	std::map<const char *, int> functionBFMap;
   std::vector <Value *> trackTaint;
 	// map of functions and pointer to map of (BB,ConvergenceFactor)
 	// for each BB in that function.
@@ -155,6 +163,7 @@ class pathCounter : public ModulePass {
   std::vector<Value *> IdxToVar;
   std::map<const char *,Value *> StrValues;
   std::map<const char *, std::list <const char *> >  BBSuccessorMap;
+  std::list<const char *> processedFunctionNames;
   int numVSets;
 };
 
@@ -318,8 +327,18 @@ void pathCounter:: displayBFMap()
 {
 	for(auto it = BFMap->begin() ; it != BFMap->end() ; it++)
 	{
-		if(!strcmp(it->first->getName().data(),"entry"))
+		if(!strcmp(it->first->getName().data(),"entry")){
 			std::cerr << it->first->getName().data() << " -> " << it->second << std::endl;
+			functionBFMap.insert(std::pair<const char *, int> ( F->getName().data(), it->second));	
+		}
+	}
+}
+
+void pathCounter :: displayFunctionBFMap()
+{
+	for(auto it = functionBFMap.begin() ; it != functionBFMap.end() ; it++)
+	{
+		std::cerr << it->first << "():" << it->second << std::endl;
 	}
 }
 
@@ -569,7 +588,7 @@ void pathCounter:: traceFunctionCallGraph()
 	generatePaths(&bbStack);
 }
 
-void pathCounter :: generateBranchingFactor()
+void pathCounter :: getFunctionLevelBF()
 {
 	auto StartBB = F->begin();
 	BFMap = new std::map <BasicBlock *, int>;
@@ -581,6 +600,108 @@ void pathCounter :: generateBranchingFactor()
 	displayBFMap();
 	delete BFMap;
 	return;
+}
+
+bool pathCounter :: isTerminalFunction() {
+	for (auto &B : *F) {
+		for( auto &I : B) {
+			if (dyn_cast<CallInst>(&I)) {
+				return false;
+			}
+		}
+	}
+	return true;
+}
+
+void pathCounter :: getTerminalFunctions()
+{
+	int term=0, nonterm=0;
+	for ( auto &F_ : M->functions())
+	{
+		F = &F_;
+		if(!F->isDeclaration()){
+			if(isTerminalFunction()){
+				std::cerr << F->getName().data() << "():-> T" << std::endl;
+				term++;
+				processedFunctionNames.push_back(F->getName().data());
+			}else{
+				std::cerr << F->getName().data() << "():-> F" << std::endl;
+				nonterm++;
+			}
+		}
+	}		
+	std::cerr << "TERMINAL = " << term << " NONTERM = " << nonterm << std::endl;
+}
+
+/* return true if current function calls all terminal functions or processed functions.
+ * */
+
+bool pathCounter :: processedFunctionCaller()
+{
+	for( auto &B : *F){
+		for (auto &I : B){
+			if (CallInst *CI = dyn_cast<CallInst>(&I)) {
+				auto funCalled = CI->getCalledFunction()->getName().data();
+				if(std::find(processedFunctionNames.begin(), processedFunctionNames.end(), funCalled) == processedFunctionNames.end()){
+					return false;
+				}
+			}
+		}
+	}
+	return true;
+}
+
+bool pathCounter :: markedProcessed()
+{
+	auto funCalled = F->getName().data();
+	if(std::find(processedFunctionNames.begin(), processedFunctionNames.end(), funCalled) == processedFunctionNames.end()){
+		return false;
+	}
+	return true;
+}
+
+/* add function to processedFunctionNames list if the functions makes calls to only those
+ * functions that already exist in processedFunctionNames list
+ * */
+
+void pathCounter :: analyseFunctionCalls()
+{
+	for( auto &F_ : M->functions()){
+		F = &F_;
+		if(!F->isDeclaration()){
+			if(markedProcessed() == true){
+				continue;
+			}if(processedFunctionCaller()){
+				processedFunctionNames.push_back(F->getName().data());
+			}
+		}
+	}	
+}
+
+/* getModuleLevelBF()
+ * first get all terminal functions, i.e. functions that do not call any other functions.
+ * add them to processedFunctionNames.
+ * next, analyse all other Function calls and check if any of these functions call already
+ * processedFunctionNames. continue doing this until there are no functions left that call
+ * any of the already existing processed Function Names.
+ * The end result will be a list of function calls in processedFunctionNames that may be
+ * kept in the form of a function tree. Other function calls are self-recursive or cross-
+ * recursive calls.
+ * Its like going bottom up, trying to tag all function calls.
+ * */
+
+void pathCounter :: getModuleLevelBF()
+{
+	getTerminalFunctions();	
+	int oldTraversedFunction, newTraversedFunction;
+	newTraversedFunction = processedFunctionNames.size();
+	oldTraversedFunction = 0;
+	while(newTraversedFunction != oldTraversedFunction){
+		oldTraversedFunction = newTraversedFunction;
+		analyseFunctionCalls();
+		newTraversedFunction = processedFunctionNames.size();
+		std::cerr << "PROCESSED FUNCTION COUNT = " << newTraversedFunction << std::endl;
+	}
 }
 
 bool pathCounter::runOnModule(Module &M_) {
@@ -597,15 +718,13 @@ bool pathCounter::runOnModule(Module &M_) {
 	{
 		F = &F_;
 		if(!F->isDeclaration()){
-		//	traceFunctionCallGraph();
-		//	generateConvergenceFactor();
 			std::cerr << F->getName().data() << std::endl;
-			generateBranchingFactor();
+			getFunctionLevelBF();
 		}
 	}
-
+	getModuleLevelBF();
+	//displayFunctionBFMap();
 	// get different basic block sequence of calls possible.
-
         return true;
 }
 
