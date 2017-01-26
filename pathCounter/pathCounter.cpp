@@ -80,9 +80,10 @@ class pathCounter : public ModulePass {
 	bool processedFunctionCaller();
 	void analyseFunctionCalls();
   void runOnIntrinsic(BasicBlock *B, MemIntrinsic *MI);
+  void getBFWithFunctionCalls(std::stack <Function*> *FStack, std::stack <BasicBlock *> *BBStack);
   //BasicBlock *getBB(const char *name);
 	int getCF(BasicBlock *BB);
-	int getBF(BasicBlock *BB, std::stack <const char *> *bbStack);
+	int getBF(BasicBlock *BB, std::stack <const char *> *bbStack, std::stack <Function *> *FStack);
 
 	void displayCFMap();
 	void displayBFMap();
@@ -284,7 +285,7 @@ int pathCounter :: getConvergence(BasicBlock *BB)
 	}
 }
 
-int pathCounter :: getBF(BasicBlock *BB, std::stack <const char *> *bbStack)
+int pathCounter :: getBF(BasicBlock *BB, std::stack <const char *> *bbStack, std::stack <Function *> *FStack = NULL)
 {
 	auto TerminatorInst = BB->getTerminator();
 	int numSucc = TerminatorInst->getNumSuccessors();
@@ -588,6 +589,10 @@ void pathCounter:: traceFunctionCallGraph()
 	generatePaths(&bbStack);
 }
 
+/* create branching factor for each function, without taking function
+ * calls into consideration
+ * */
+
 void pathCounter :: getFunctionLevelBF()
 {
 	auto StartBB = F->begin();
@@ -602,106 +607,50 @@ void pathCounter :: getFunctionLevelBF()
 	return;
 }
 
-bool pathCounter :: isTerminalFunction() {
-	for (auto &B : *F) {
-		for( auto &I : B) {
-			if (dyn_cast<CallInst>(&I)) {
-				return false;
-			}
-		}
-	}
-	return true;
+void pathCounter :: getBFWithFunctionCalls(std::stack <Function*> *FStack, std::stack <BasicBlock *> *BBStack)
+{
+	// get current Function Context.
+	assert(!FStack->empty());
+	F = FStack->top();
+	FStack->pop();
+	// TODO call getBF here
+//	for(auto &BB_ : *F){
+//				
+//	}
+				
 }
 
-void pathCounter :: getTerminalFunctions()
+/* 
+ * getModuleLevelBF() maintans two stacks - function level and bb level.
+ * go through each called function recursively and continue till we reach
+ * one of the following conditions:
+ * 
+ * a) end of main
+ * b) recursive call to a function.
+ * 
+ * if loops occur within a function, resolve them using the same heuristics
+ * as used before.
+ *
+ * */
+
+void pathCounter:: getModuleLevelBF()
 {
-	int term=0, nonterm=0;
-	for ( auto &F_ : M->functions())
+	// get main function.
+	for(auto &F_ : M->functions())
 	{
 		F = &F_;
-		if(!F->isDeclaration()){
-			if(isTerminalFunction()){
-				std::cerr << F->getName().data() << "():-> T" << std::endl;
-				term++;
-				processedFunctionNames.push_back(F->getName().data());
-			}else{
-				std::cerr << F->getName().data() << "():-> F" << std::endl;
-				nonterm++;
-			}
-		}
-	}		
-	std::cerr << "TERMINAL = " << term << " NONTERM = " << nonterm << std::endl;
-}
-
-/* return true if current function calls all terminal functions or processed functions.
- * */
-
-bool pathCounter :: processedFunctionCaller()
-{
-	for( auto &B : *F){
-		for (auto &I : B){
-			if (CallInst *CI = dyn_cast<CallInst>(&I)) {
-				auto funCalled = CI->getCalledFunction()->getName().data();
-				if(std::find(processedFunctionNames.begin(), processedFunctionNames.end(), funCalled) == processedFunctionNames.end()){
-					return false;
-				}
-			}
+		if(!strcmp(F->getName().data(),"main")){
+			break;
 		}
 	}
-	return true;
-}
-
-bool pathCounter :: markedProcessed()
-{
-	auto funCalled = F->getName().data();
-	if(std::find(processedFunctionNames.begin(), processedFunctionNames.end(), funCalled) == processedFunctionNames.end()){
-		return false;
-	}
-	return true;
-}
-
-/* add function to processedFunctionNames list if the functions makes calls to only those
- * functions that already exist in processedFunctionNames list
- * */
-
-void pathCounter :: analyseFunctionCalls()
-{
-	for( auto &F_ : M->functions()){
-		F = &F_;
-		if(!F->isDeclaration()){
-			if(markedProcessed() == true){
-				continue;
-			}if(processedFunctionCaller()){
-				processedFunctionNames.push_back(F->getName().data());
-			}
-		}
-	}	
-}
-
-/* getModuleLevelBF()
- * first get all terminal functions, i.e. functions that do not call any other functions.
- * add them to processedFunctionNames.
- * next, analyse all other Function calls and check if any of these functions call already
- * processedFunctionNames. continue doing this until there are no functions left that call
- * any of the already existing processed Function Names.
- * The end result will be a list of function calls in processedFunctionNames that may be
- * kept in the form of a function tree. Other function calls are self-recursive or cross-
- * recursive calls.
- * Its like going bottom up, trying to tag all function calls.
- * */
-
-void pathCounter :: getModuleLevelBF()
-{
-	getTerminalFunctions();	
-	int oldTraversedFunction, newTraversedFunction;
-	newTraversedFunction = processedFunctionNames.size();
-	oldTraversedFunction = 0;
-	while(newTraversedFunction != oldTraversedFunction){
-		oldTraversedFunction = newTraversedFunction;
-		analyseFunctionCalls();
-		newTraversedFunction = processedFunctionNames.size();
-		std::cerr << "PROCESSED FUNCTION COUNT = " << newTraversedFunction << std::endl;
-	}
+	// do BF calculation recursively starting from main
+	std::stack <Function *> functionStack;
+	std::stack <BasicBlock *> localBBStack;
+	functionStack.push(F);
+	localBBStack.push(&F->getEntryBlock());
+	//std::stack <const char *> globalBBStack;
+	//TODO use globalBBStack to maintain state of global basic blocks
+	getBFWithFunctionCalls(&functionStack, &localBBStack);
 }
 
 bool pathCounter::runOnModule(Module &M_) {
@@ -714,14 +663,14 @@ bool pathCounter::runOnModule(Module &M_) {
 
 	// get different function call paths possible.
 
-	for(auto &F_ : M->functions())
-	{
-		F = &F_;
-		if(!F->isDeclaration()){
-			std::cerr << F->getName().data() << std::endl;
-			getFunctionLevelBF();
-		}
-	}
+	//for(auto &F_ : M->functions())
+	//{
+	//	F = &F_;
+	//	if(!F->isDeclaration()){
+	//		std::cerr << F->getName().data() << std::endl;
+	//		getFunctionLevelBF();
+	//	}
+	//}
 	getModuleLevelBF();
 	//displayFunctionBFMap();
 	// get different basic block sequence of calls possible.
