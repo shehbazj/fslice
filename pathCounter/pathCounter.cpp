@@ -75,37 +75,36 @@ class pathCounter : public ModulePass {
   void runOnUnary(BasicBlock *B, UnaryInstruction *I);
   void runOnBinary(BasicBlock *B, BinaryOperator *I);
 	void runOnICmp(BasicBlock *B, ICmpInst *I);
-  void traceFunctionCallGraph();
   void generateConvergenceFactor();
-  void getFunctionBFWithoutCalls();
-  void getModuleLevelBF();
+  void getFunctionPPWithoutCalls();
+  void getModuleLevelPP();
 	std::map <uint64_t, uint64_t> taintMap;
 	bool markedProcessed();
 	bool processedFunctionCaller();
 	void analyseFunctionCalls();
   void runOnIntrinsic(BasicBlock *B, MemIntrinsic *MI);
-  int getFunctionBF(std::stack <const char*> *FStack);
+  int getFunctionPP(std::stack <const char*> *FStack);
 	void generateTaintInfo();
 	void processBlock(BasicBlock *BB);
 	std::vector<const char *> processedBlocks;
-  int getBFOfFunctionCalls(BasicBlock *BB, std::stack <const char *> *FStack);
+  int getPPOfFunctionCalls(BasicBlock *BB, std::stack <const char *> *FStack);
 	void processDFS(BasicBlock *B, std::stack <const char *> *BBStack);
 	void processBasicBlock(BasicBlock *BB);
 	//void generateTestCases();
   //BasicBlock *getBB(const char *name);
 	int getCF(BasicBlock *BB);
-	int getBasicBlockBF(BasicBlock *BB, std::stack <const char *> *bbStack, std::stack <const char *> *FStack);
+	int getBasicBlockPP(BasicBlock *BB, std::stack <const char *> *bbStack, std::stack <const char *> *FStack);
 
-	void displayCFMap();
-	void displayBFMap();
-	void displayFunctionBFMap();
+	void printCFMap();
+	void printPaths();
+	void printFunctionPPMap();
 	void printStack(std::stack <const char *> *bbStack);
 	int  getConvergence(BasicBlock *BB);
 	int  getMaxConvergence(TerminatorInst *I);
 
 	void runOnBB(BasicBlock *BB);
 	void trackLoad(Value *I);
-	void displayMap();
+	void printMap();
 	void generatePaths(std::stack <const char *> *);
 	template <typename T>
 	bool isLoopBack(T *currentBB, std::stack <T *> *bbStack);
@@ -124,8 +123,8 @@ class pathCounter : public ModulePass {
   Value *LoadTaint(Instruction *I, Value *V);
 
 	std::map<BasicBlock *, int> *CFMap = new std::map <BasicBlock *, int>;
-	std::map<BasicBlock *, int> *BFMap = new std::map <BasicBlock *, int>;
-	std::map<const char *, int> functionBFMap;
+	std::map<BasicBlock *, int> *PPMap = new std::map <BasicBlock *, int>;
+	std::map<const char *, int> functionPPMap;
   std::vector <Value *> trackTaint;
 	// map of functions and pointer to map of (BB,ConvergenceFactor)
 	// for each BB in that function.
@@ -192,7 +191,7 @@ pathCounter::pathCounter(void)
       AfterAlloca(nullptr),
       numVSets(0) {}
 
-void pathCounter :: displayMap()
+void pathCounter :: printMap()
 {
 	for(auto bbIt = BBSuccessorMap.begin() ; bbIt != BBSuccessorMap.end() ; bbIt++){
 		std::cerr << bbIt->first << " -> ";
@@ -297,11 +296,15 @@ int pathCounter :: getConvergence(BasicBlock *BB)
 	}
 }
 
-int pathCounter :: getBFOfFunctionCalls(BasicBlock *BB, std::stack <const char *> *FStack)
+/* getPPofFunctionCalls - generates Path Potential of the functions that are called from a
+ * basic block BB.
+ * */
+
+int pathCounter :: getPPOfFunctionCalls(BasicBlock *BB, std::stack <const char *> *FStack)
 {
-	int functionBF = 1;
+	int functionPP = 1;
 	if(FStack == NULL)
-		return functionBF;
+		return functionPP;
 	for (auto &I : *BB){
 		if( CallInst *CI = dyn_cast<CallInst > (&I)) {
 			if(CI->getCalledFunction() == NULL){
@@ -317,61 +320,78 @@ int pathCounter :: getBFOfFunctionCalls(BasicBlock *BB, std::stack <const char *
 			auto calledFunction = CI->getCalledFunction()->getName().data();
 			D(std::cerr << __func__ << "(): BB " << BB->getName().data() << " calls " << calledFunction << std::endl;)
 			if(M->getFunction(calledFunction)->isDeclaration()){
+				// we do not have the function definition, we just have the function declaration.
 				continue;
 			}
-    			FStack->push(calledFunction);
-			functionBF *= getFunctionBF(FStack);
-			FStack->pop();
+			// XXX why is this going into infinite loop?
+			if(!strcmp(calledFunction , "quotearg_buffer_restyled")){
+				continue;
+			}
+			if(functionPPMap.find(calledFunction) == functionPPMap.end()){
+	    			FStack->push(calledFunction);
+				auto calledFunctionPP = getFunctionPP(FStack);
+				functionPP *= calledFunctionPP;
+				std::cerr << __func__ << "():" << calledFunction << calledFunctionPP << std::endl;
+				functionPPMap[calledFunction] = calledFunctionPP;
+				FStack->pop();
+			}else{
+				functionPP *= functionPPMap[calledFunction];
+				D(std::cerr << __func__ << "():" << FStack->top() << functionPP << " after processing " << calledFunction << std::endl;)
+			}
 		}
 	}
-	return functionBF;
+	return functionPP;
 }
 
-int pathCounter :: getBasicBlockBF(BasicBlock *BB, std::stack <const char *> *bbStack, std::stack <const char *> *FStack = NULL)
+/* getBasicBlockPP calculates the Path Potential for each Basic Block.
+ * */
+
+int pathCounter :: getBasicBlockPP(BasicBlock *BB, std::stack <const char *> *bbStack, std::stack <const char *> *FStack = NULL)
 {
 	if(BB == NULL){
+		printStack(FStack);
 		assert(0);
 	}
 	D(printStack(FStack);)
 	auto TerminatorInst = BB->getTerminator();
 	int numSucc = TerminatorInst->getNumSuccessors();
-	int calledFunctionBF = 1;
+	int calledFunctionPP = 1;
 	D(std::cerr << __func__ << "(): " << BB->getName().data() << std::endl;)
 	if(isLoopBack(BB->getName().data(),bbStack)){
-		D(std::cerr << __func__ << "(): " << BB->getName().data() << " is loopback"  << std::endl;)
+		std::cerr << __func__ << "(): " << FStack->top() << " " << BB->getName().data() << " is loopback"  << std::endl;
 		auto alternateBB = getAlternatePath(BB, bbStack);
-		calledFunctionBF = getBFOfFunctionCalls(alternateBB, FStack);
+		calledFunctionPP = getPPOfFunctionCalls(alternateBB, FStack);
 		bbStack	->push(alternateBB->getName().data());
-		auto currentBB_BF = calledFunctionBF * getBasicBlockBF(alternateBB, bbStack, FStack);
+		auto currentBB_PP = calledFunctionPP * getBasicBlockPP(alternateBB, bbStack, FStack);
 		bbStack->pop();	
-		return currentBB_BF;
+		return currentBB_PP;
 	}else{
 		if (numSucc == 0){
-			BFMap->insert(std::pair<BasicBlock *, int> (BB, 1));
-			calledFunctionBF = getBFOfFunctionCalls(BB, FStack);
+			PPMap->insert(std::pair<BasicBlock *, int> (BB, 1));
+			calledFunctionPP = getPPOfFunctionCalls(BB, FStack);
 			D(std::cerr << __func__ << "(): " << "reached terminator block " << BB->getName().data() << std::endl;)
 			D(printStack(bbStack);)
-			return calledFunctionBF;
+			return calledFunctionPP;
 		}else{
-			calledFunctionBF = getBFOfFunctionCalls(BB, FStack);	
+			calledFunctionPP = getPPOfFunctionCalls(BB, FStack);	
 			auto TerminatorInst = BB->getTerminator();
-			int currentBB_BF = 0;
+			int currentBB_PP = 0;
 			for(int i = 0 ; i < numSucc ; i++){
 				auto nextBB = TerminatorInst->getSuccessor(i);
-				//calledFunctionBF = getBFOfFunctionCalls(nextBB, FStack);
+				//calledFunctionPP = getPPOfFunctionCalls(nextBB, FStack);
 				bbStack->push(nextBB->getName().data());
-				D(std::cerr << __func__ << "(): calling BB_BF of " << nextBB->getName().data()  << std::endl;)
+				D(std::cerr << __func__ << "(): calling BB_PP of " << nextBB->getName().data()  << std::endl;)
 				//printStack(bbStack);
-				currentBB_BF += (calledFunctionBF * getBasicBlockBF(nextBB, bbStack, FStack));
+				currentBB_PP += (calledFunctionPP * getBasicBlockPP(nextBB, bbStack, FStack));
 				bbStack->pop();
 			}
-			BFMap->insert( std::pair<BasicBlock *, int> (BB, currentBB_BF) );
-			return currentBB_BF;
+			PPMap->insert( std::pair<BasicBlock *, int> (BB, currentBB_PP) );
+			return currentBB_PP;
 		}
 	}
 }
 
-void pathCounter:: displayCFMap()
+void pathCounter:: printCFMap()
 {
 	for(auto it = CFMap->begin() ; it != CFMap->end() ; it++)
 	{
@@ -379,21 +399,17 @@ void pathCounter:: displayCFMap()
 	}	
 }
 
-void pathCounter:: displayBFMap()
+void pathCounter:: printPaths()
 {
-	for(auto it = BFMap->begin() ; it != BFMap->end() ; it++)
+	for(auto it = PPMap->begin() ; it != PPMap->end() ; it++)
 	{
-		//if(!strcmp(it->first->getName().data(),"entry")){
-			std::cerr << it->first->getName().data() << " -> " << it->second << std::endl;
-			if(!strcmp(it->first->getName().data(),"entry"))
-				functionBFMap.insert(std::pair<const char *, int> ( F->getName().data(), it->second));	
-		//}
+		D(std::cerr << it->first->getName().data() << " -> " << it->second << std::endl;)
 	}
 }
 
-void pathCounter :: displayFunctionBFMap()
+void pathCounter :: printFunctionPPMap()
 {
-	for(auto it = functionBFMap.begin() ; it != functionBFMap.end() ; it++)
+	for(auto it = functionPPMap.begin() ; it != functionPPMap.end() ; it++)
 	{
 		std::cerr << it->first << "():" << it->second << std::endl;
 	}
@@ -412,7 +428,7 @@ void pathCounter :: generateConvergenceFactor()
 	assert(StartBB->getName().data() != NULL);
 	int SBconv = getConvergence(StartBB);
 	CFMap->insert (std::pair<BasicBlock *, int >  (StartBB,SBconv));
-	displayCFMap();
+	printCFMap();
 	delete CFMap;
 	return;
 }
@@ -620,73 +636,58 @@ void pathCounter :: generatePaths(std::stack <const char *> *bbStack)
 	}
 }
 
-void pathCounter:: traceFunctionCallGraph()
-{
-	std::string funName(F->getName().data());
-	BBSuccessorMap.clear();
-	for(auto &BB : *F){
-		std::string bbName(BB.getName().data());
-		//std::cerr << F->getName().data() << "()"<< BB.getName().data() << ":";
-		auto TermInst = BB.getTerminator();
-		auto numSuccessors = TermInst->getNumSuccessors();
-		if(numSuccessors == 0){
-	//		std::cerr << BB.getName().data() << " has no successors " << std::endl;
-			;
-		}else{	
-			for(unsigned i = 0 ; i < numSuccessors ; i++){
-				//std::cerr << TermInst->getSuccessor(i)->getName().data() << ",";
-				BBSuccessorMap[BB.getName().data()].push_back(TermInst->getSuccessor(i)->getName().data());
-			}
-			//std::cerr << std::endl;
-		}
-	}
-	//displayMap();
-  	std::stack<const char *> bbStack;
-	bbStack.push("entry");
-	generatePaths(&bbStack);
-}
-
 /* create branching factor for each function, without taking function
  * calls into consideration
  * */
 
-void pathCounter :: getFunctionBFWithoutCalls()
+void pathCounter :: getFunctionPPWithoutCalls()
 {
 	auto StartBB = F->begin();
-	BFMap = new std::map <BasicBlock *, int>;
+	PPMap = new std::map <BasicBlock *, int>;
 	std::stack <const char *> bbStack;
 	assert(StartBB->getName().data() != NULL);
 	bbStack.push(StartBB->getName().data());
-	int StartBBcount = getBasicBlockBF(StartBB, &bbStack);
-	BFMap->insert (std::pair<BasicBlock *, int >  (StartBB,StartBBcount));
-	//displayBFMap();
-	delete BFMap;
+	int StartBBcount = getBasicBlockPP(StartBB, &bbStack);
+	PPMap->insert (std::pair<BasicBlock *, int >  (StartBB,StartBBcount));
+	//printPPMap();
+	delete PPMap;
 	return;
 }
 
-int pathCounter :: getFunctionBF(std::stack <const char*> *FStack)
+int pathCounter :: getFunctionPP(std::stack <const char*> *FStack)
 {
 	// get current Function Context.
-	D(std::cerr << __func__ << "()" << std::endl;)
 	D(printStack(FStack);)
 	assert(!FStack->empty());
 	auto FunName = FStack->top();
+	std::cerr << FunName << "()" << std::endl;
 	//FStack->pop();
 
-	D(std::cerr << "Processing BF for Function " << FunName << "()" << std::endl;)
+	D(std::cerr << "Processing PP for Function " << FunName << "()" << std::endl;)
 	if(isLoopBack(FunName,FStack)){
 		std::cerr << __func__ << "(): " << FunName << " is loopback"  << std::endl;
+		FStack->pop();
+		std::cerr << "PP: " << FunName << " = " << 0 << std::endl;
+		functionPPMap[FunName]=0;
 		return 0;
 	}
-	std::stack <const char *> localStack;
-
-	localStack.push("entry");
-	// compute and return BF here
-	return getBasicBlockBF(M->getFunction(FunName)->begin(), &localStack, FStack);
+	// compute and return PP here
+	int funPP;
+	if(functionPPMap.find(FunName) == functionPPMap.end()){
+		std::stack <const char *> localStack;
+		localStack.push("entry");
+		funPP = getBasicBlockPP(M->getFunction(FunName)->begin(), &localStack, FStack);
+		std::cerr << "PP: " << FunName << " = " << funPP << std::endl;
+		functionPPMap[FunName] = funPP;
+	}else {
+		funPP = functionPPMap[FunName];
+		std::cerr << "PP: ALREADY PROCESSED, REUSING " << FunName  << funPP << std::endl;
+	}
+	return funPP;
 }
 
 /* 
- * getModuleLevelBF() maintans two stacks - function level and bb level.
+ * getModuleLevelPP() maintans two stacks - function level and bb level.
  * go through each called function recursively and continue till we reach
  * one of the following conditions:
  * 
@@ -698,26 +699,33 @@ int pathCounter :: getFunctionBF(std::stack <const char*> *FStack)
  *
  * */
 
-void pathCounter:: getModuleLevelBF()
+void pathCounter:: getModuleLevelPP()
 {
+	bool nomain = true;
 	// get main function.
 	for(auto &F_ : M->functions())
 	{
 		F = &F_;
 		if(!strcmp(F->getName().data(),"main")){
+			nomain = false;
 			break;
 		}
 	}
-	// do BF calculation recursively starting from main
+	if(nomain){
+		std::cerr << "Please add main() or mark start function" << std::endl;
+		return;
+	}
+	// do PP calculation recursively starting from main
 	std::stack <const char *> functionStack;
 	functionStack.push(F->getName().data());
 	//std::stack <const char *> globalBBStack;
 	//TODO use globalBBStack to maintain state of global basic blocks
-	int totalBF = getFunctionBF(&functionStack);
-	std::cerr << "Total BF " << totalBF << std::endl;
+	int totalPP = getFunctionPP(&functionStack);
+	std::cerr << "Total PP " << totalPP << std::endl;
 }
 
 bool pathCounter::runOnModule(Module &M_) {
+	// initialization stuff
         M = &M_;
         C = &(M->getContext());
         DL = M->getDataLayout();
@@ -726,22 +734,14 @@ bool pathCounter::runOnModule(Module &M_) {
         VoidPtrTy = PointerType::getUnqual(IntegerType::getInt8Ty(*C));
 
 	// get different function call paths possible.
-
-	//for(auto &F_ : M->functions())
-	//{
-	//	F = &F_;
-	//	if(!F->isDeclaration()){
-	//		std::cerr << F->getName().data() << std::endl;
-	//		getFunctionBFWithoutCalls();
-	//	}
-	//}
-	getModuleLevelBF();
-
-	//displayBFMap();	
-
-	generateTaintInfo();
+	getModuleLevelPP();
+	printPaths();
+	//initFunctionPPMap();
+	// do the runtime instrumentation for the code
+		//generateTaintInfo();
+		printFunctionPPMap();
 	//generateTestCases();
-	//displayFunctionBFMap();
+	//printFunctionPPMap();
 	// get different basic block sequence of calls possible.
         return true;
 }
@@ -781,15 +781,10 @@ void pathCounter:: processBlock(BasicBlock *BB)
 ////	}
 //}
 
+/*print all paths in DFS order*/
+
 void pathCounter :: processDFS(BasicBlock *B, std::stack<const char *> *BBStack)
 {
-//	if(std::find (processedBlocks.begin(), processedBlocks.end(), B->getName().data()) == processedBlocks.end()){
-//		//processBlock(B);
-//		//std::cerr << B->getName().data() << std::endl;
-//		processedBlocks.push_back(B->getName().data());
-//	}else{
-//		return;
-//	}
 	if(B->getTerminator()->getNumSuccessors() == 0){
 		BBStack->push(B->getName().data());
 		printStack(BBStack);
@@ -809,17 +804,20 @@ void pathCounter :: processDFS(BasicBlock *B, std::stack<const char *> *BBStack)
 	}
 }
 
+/*instruments code to call runtime functions  */
+
 void pathCounter:: generateTaintInfo()
 {
 	for(auto &F_ : M->functions())
 	{
 		F = &F_;
 		std::stack <const char *> BBStack;
-  		auto B = F->begin(); 
+  		// XXX uncomment before removing commit below.
+  		// auto B = F->begin(); 
 		if(!F->isDeclaration()){
 			std::cerr << "checking the dfs algo" << std::endl;
 			runOnFunction();
-			processDFS(B, &BBStack);
+			//XXX prints all function path calls. processDFS(B, &BBStack);
 			runOnFunctionEnd();
 		}
 	}
@@ -845,6 +843,8 @@ void pathCounter::runOnFunction() {
   allocaVSetArray();
   runOnArgs();
 }
+
+/* cleanup data structures */
 
 void pathCounter::runOnFunctionEnd() {
   ArgToVSet.clear();
