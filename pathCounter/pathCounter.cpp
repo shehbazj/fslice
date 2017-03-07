@@ -113,8 +113,8 @@ class pathCounter : public ModulePass {
 	BasicBlock * getAlternatePath(BasicBlock *ForLoopBlock, std::stack <const char *> *bbStack);
 	bool isTerminalFunction();
 	void getTerminalFunctions();
-	void processBBInstructions();
-	void evaluatePath(std::map<std::string, unsigned > *GbbMap);
+	void processBBInstructions(std::map <std::string, unsigned> *GbbMap, std::list <std::string > *traversedBB, std::string funName);
+	void evaluatePath(std::map<std::string, unsigned > *GbbMap, std::string funName, std::list <std::string> *traversedList);
 
 	void printFunCallFromBB(const char *bbName);
   void track(Value *V);
@@ -701,62 +701,85 @@ void pathCounter:: getModuleLevelPP( std::map < std::string, unsigned> *GbbMap)
 	std::cerr << "Total PP " << totalPP << std::endl;
 }
 
-void pathCounter::processBBInstructions()
+void pathCounter::processBBInstructions(std::map <std::string, unsigned> *GbbMap, std::list <std::string > *traversedList, std::string parentFunName)
 {
 	if(LocalBB->hasName())
-		std::cerr << "BB()" <<  LocalBB->getName().data() << std::endl;
-//	for(&I : LocalBB){
-//			
-//	}
-;
+		std::cerr << parentFunName << "BB()" <<  LocalBB->getName().data() << std::endl;
+	for(auto &I : *LocalBB){
+/*		if (LoadInst *LI = dyn_cast<LoadInst>(&I)) {
+      			  runOnLoad(BB,LI);
+		} else if (StoreInst *SI = dyn_cast<StoreInst>(&I)) {
+    			  runOnStore(BB, SI);
+    		} else if (MemIntrinsic *MI = dyn_cast<MemIntrinsic>(&I)) {
+      			runOnIntrinsic(BB, MI);
+    		} else*/ 
+		if (CallInst *CI = dyn_cast<CallInst>(&I)) {
+			if(CI->getCalledFunction() != NULL)
+			if(CI->getCalledFunction()->hasName())
+			if(!M->getFunction(CI->getCalledFunction()->getName().data())->isDeclaration()){
+				std::string funName = std::string(CI->getCalledFunction()->getName().data());
+				std::cerr << LocalBB->getName().data() << " calls function()" << funName << std::endl;
+				evaluatePath(GbbMap, funName, traversedList);
+			}
+    		}/* else if (ReturnInst *RI = dyn_cast<ReturnInst>(&I)) {
+      			runOnReturn(BB, RI);
+    		} else if (UnaryInstruction *UI = dyn_cast<UnaryInstruction>(&I)) {
+      			runOnUnary(BB, UI);
+    		} else if (BinaryOperator *BI = dyn_cast<BinaryOperator>(&I)) {
+      			runOnBinary(BB, BI);
+    		} else if (ICmpInst *IC = dyn_cast<ICmpInst>(&I)) {
+      			runOnICmp(BB, IC);	
+    		} */
+	}
 }
 
-void pathCounter::evaluatePath(std::map< std::string, unsigned> *GbbMap)
+void pathCounter::evaluatePath(std::map< std::string, unsigned> *GbbMap, std::string funName, std::list<std::string> *traversedBB)
 {
-	auto &BB = M->getFunction("main")->getEntryBlock();
+	auto &BB = M->getFunction(funName.c_str())->getEntryBlock();
 	auto TermInst = BB.getTerminator();
-	std::list <std::string> traversedBB;
 	LocalBB = &BB;
 	while(TermInst -> getNumSuccessors() != 0 )
 	{
-		processBBInstructions();
+		processBBInstructions(GbbMap, traversedBB, funName);
 		if(TermInst->getNumSuccessors() == 0){	// reached end of path
 			std::cerr << "Terminating at " << LocalBB->getName().data() << std::endl;
 			break;
 		}else if(TermInst->getNumSuccessors() == 1){
 			LocalBB = TermInst->getSuccessor(0);
-			std::cerr << "Next Block " << LocalBB->getName().data() << std::endl;
 			if(!LocalBB->hasName())
 				continue;
 			TermInst = TermInst->getSuccessor(0)->getTerminator();
-			std::string str("main");
+			std::string str(funName);
 			str+= LocalBB->getName().data();
-			traversedBB.push_back(str);
-			std::cerr << "New BB " << LocalBB->getName().data() << std::endl;
+			traversedBB->push_back(str);
 		}else{
 			unsigned max = 0;
-			std::cerr << "checking for " << BB.getName().data() << "successors " << std::endl;
 			for(unsigned i = 0 ; i < TermInst->getNumSuccessors() ; i++){
-				std::string nextBBName("main");
-				nextBBName+= std::string(TermInst->getSuccessor(i)->getName());
+				std::string nextBBName(funName);
+				nextBBName+= std::string(TermInst->getSuccessor(i)->getName().data());
 				if(GbbMap->find(nextBBName) == GbbMap->end()){
 					std::cerr<< "Basic Block PP not found " << nextBBName << std::endl;	
 					exit(0);
 				}
-				if((*GbbMap)[nextBBName] > max && (std::find(traversedBB.begin(), traversedBB.end(), nextBBName) == traversedBB.end())){
+				if((*GbbMap)[nextBBName] > max && (std::find(traversedBB->begin(), traversedBB->end(), nextBBName) == traversedBB->end())){
 					std::cerr << "found " << nextBBName << " with weight " << (*GbbMap)[nextBBName] << std::endl;
 					max = (*GbbMap)[nextBBName];
 					LocalBB = TermInst->getSuccessor(i);
-					TermInst = TermInst->getSuccessor(i)->getTerminator();
 				//	if(!LocalBB->hasName())
 				//		continue;
 				}
 			}
-			traversedBB.push_back(LocalBB->getName().data());
-			processBBInstructions();		
+			if(max == 0){
+				break;	
+			}
+			TermInst = LocalBB->getTerminator();
+			std::string bbName(funName);
+			bbName.append(LocalBB->getName().data());
+			traversedBB->push_back(bbName);
+		//	processBBInstructions(GbbMap);		
 		}
 	}
-	//processBBInstructions(); // for the terminal Basic Block
+	processBBInstructions(GbbMap, traversedBB, funName); // for the terminal Basic Block
 }
 
 bool pathCounter::runOnModule(Module &M_) {
@@ -772,7 +795,8 @@ bool pathCounter::runOnModule(Module &M_) {
 	// get different function call paths possible.
 	getModuleLevelPP(&GbbMap);
 	std::cerr << "evaluate path" << std::endl;
-	evaluatePath(&GbbMap);
+	std::list <std::string> traversedBB;
+	evaluatePath(&GbbMap, std::string("main"), &traversedBB);
 	//printFunctionPPMap();
 	//std::cerr << "gBMap " << std::endl;
 	//std::cerr << "GBBMap Size = " << GbbMap.size() << std::endl;
