@@ -16,6 +16,15 @@
 #include <vector>
 #include <string>
 
+
+// #define DEBUG
+#ifdef DEBUG
+#  define D(x) x
+#else
+#  define D(x)
+#endif
+
+
 using namespace llvm;
 
 // Set of llvm values that represent a logical variable.
@@ -198,6 +207,7 @@ void FSliceModulePass::collectInstructions(void) {
     for (auto &I : B) {
       IIs.push_back({&B, &I});
     }
+	D(std::cerr << "Basic Block " << B.getName().data() << IIs.size() << std::endl; )
   }
 }
 
@@ -221,6 +231,7 @@ void FSliceModulePass::initVSets(void) {
     auto VSet = &(VSets[i++]);
     VtoVSet[II.I] = VSet;
   }
+	D(std::cerr << "VtoVSet Size = " << VtoVSet.size() << std::endl;)
 }
 
 // Combine value sets.
@@ -233,6 +244,7 @@ void FSliceModulePass::combineVSets(void) {
     auto I = II.I;
     auto VSet = VtoVSet[I];
     if (PHINode *PHI = dyn_cast<PHINode>(I)) {
+	D(std::cerr << "Detected phi node " << II.B->getName().data() << std::endl;)
       auto nV = PHI->getNumIncomingValues();
       for (auto iV = 0U; iV < nV; ++iV) {
         auto V = PHI->getIncomingValue(iV);
@@ -291,6 +303,7 @@ void FSliceModulePass::allocaVSetArray(void) {
                                        TaintVar));
     IdxToVar.push_back(TaintVar);
   }
+	D(std::cerr << "numVsets = " << numVSets << " IdxToVar Size = " << IdxToVar.size() << std::endl;)
   AfterAlloca = &FirstI;
 }
 
@@ -384,6 +397,7 @@ static uint64_t LoadStoreSize(const DataLayout *DL, Value *P) {
 
 // Instrument a single instruction.
 void FSliceModulePass::runOnLoad(BasicBlock *B, LoadInst *LI) {
+	D(std::cerr << __func__ << "(): Basic Block " << B->getName().data() << std::endl;)
   if (auto TV = getTaint(LI)) {
     auto &IList = B->getInstList();
     auto P = LI->getPointerOperand();
@@ -398,8 +412,10 @@ void FSliceModulePass::runOnLoad(BasicBlock *B, LoadInst *LI) {
   }
 }
 
-// Get a value that contains the tainted data for a local variable, or zero if
-// the variable isn't tainted.
+// Get taint value of V if it already exists using getTaint.
+// If taint for V does not exist, create a taint for the value V
+// most probably V is a constant. If it is a constant integer value
+//  it would load it from fslice_value.
 Value *FSliceModulePass::LoadTaint(Instruction *I, Value *V) {
   auto &IList = I->getParent()->getInstList();
   Instruction *RV = nullptr;
@@ -427,6 +443,7 @@ Value *FSliceModulePass::LoadTaint(Instruction *I, Value *V) {
 
 // Instrument a single instruction.
 void FSliceModulePass::runOnStore(BasicBlock *B, StoreInst *SI) {
+	D(std::cerr << __func__ << "(): Basic Block " << B->getName().data() << std::endl;)
   auto &IList = B->getInstList();
   auto V = SI->getValueOperand();
   auto P = SI->getPointerOperand();
@@ -437,11 +454,20 @@ void FSliceModulePass::runOnStore(BasicBlock *B, StoreInst *SI) {
   std::vector<Value *> args = {A, T};
   auto StoreFunc = CreateFunc(VoidTy, "__fslice_store", std::to_string(S),
                               IntPtrTy, IntPtrTy);
+  auto T2 = getTaint(P);
+	if(T2 == nullptr){
+		D(std::cerr << __func__ << "():Pointer operand is null" << std::endl;)
+;
+	}else{
+		D(std::cerr << __func__ << "():Pointer operand not null" << std::endl;)
+;
+	}
   IList.insert(SI, A);
   IList.insert(SI, CallInst::Create(StoreFunc, args));
 }
 
 void FSliceModulePass::runOnCall(BasicBlock *B, CallInst *CI) {
+	D(std::cerr << __func__ << "(): Basic Block " << B->getName().data() << std::endl;)
   auto &IList = B->getInstList();
   auto StoreFunc = CreateFunc(VoidTy, "__fslice_store_arg", "",
                               IntPtrTy, IntPtrTy);
@@ -465,6 +491,7 @@ void FSliceModulePass::runOnCall(BasicBlock *B, CallInst *CI) {
 }
 
 void FSliceModulePass::runOnReturn(BasicBlock *B, ReturnInst *RI) {
+	D(std::cerr << __func__ << "(): Basic Block " << B->getName().data() << std::endl;)
   if (auto RV = RI->getReturnValue()) {
     auto &IList = B->getInstList();
     auto StoreFunc = CreateFunc(VoidTy, "__fslice_store_ret", "",
@@ -481,15 +508,21 @@ void FSliceModulePass::runOnReturn(BasicBlock *B, ReturnInst *RI) {
 
 
 void FSliceModulePass::runOnUnary(BasicBlock *B, UnaryInstruction *I) {
-  if (!isa<CastInst>(I)) return;
+	D(std::cerr << __func__ << "(): Basic Block " << B->getName().data() << std::endl;)
+  if (!isa<CastInst>(I)) {
+	return;
+  }
   auto TD = getTaint(I);
-  if (!TD) return;
+  if (!TD) {
+	 return;
+  }
   auto &IList = B->getInstList();
   auto T = LoadTaint(I, I->getOperand(0));
   IList.insert(I, new StoreInst(T, TD));
 }
 
 void FSliceModulePass::runOnBinary(BasicBlock *B, BinaryOperator *I) {
+	D(std::cerr << __func__ << "(): Basic Block " << B->getName().data() << std::endl;)
   auto TD = getTaint(I);
   if (!TD) return;
 
@@ -507,6 +540,7 @@ void FSliceModulePass::runOnBinary(BasicBlock *B, BinaryOperator *I) {
 }
 
 void FSliceModulePass::runOnICmp(BasicBlock *B, ICmpInst *I) {
+	D(std::cerr << __func__ << "(): Basic Block " << B->getName().data() << std::endl;)
 	auto TD = getTaint(I);
 	if(!TD) return;
 
@@ -524,6 +558,7 @@ void FSliceModulePass::runOnICmp(BasicBlock *B, ICmpInst *I) {
 }
 
 void FSliceModulePass::runOnIntrinsic(BasicBlock *B, MemIntrinsic *MI) {
+	D(std::cerr << __func__ << "(): Basic Block " << B->getName().data() << std::endl;)
   const char *FName = nullptr;
   auto CastOp = Instruction::PtrToInt;
   if (isa<MemSetInst>(MI)) {
@@ -554,12 +589,22 @@ void FSliceModulePass::runOnIntrinsic(BasicBlock *B, MemIntrinsic *MI) {
 Value *FSliceModulePass::getTaint(Value *V) {
   if (V->getType()->isFPOrFPVectorTy()) return nullptr;
   if (VtoVSet.count(V)) {
+    D(std::cerr << __func__ << "(): got instruction from VtoVSet" << std::endl;)
     auto index = VtoVSet[V]->index;
-    if (-1 == index) return nullptr;
+    if (-1 == index) {
+	D(std::cerr << "Index is -1, returning NULL" << std::endl;)
+	return nullptr;
+	}
+	D(std::cerr << "returning value from IdxToVar at index " << index << std::endl;)
     return IdxToVar[index];
   } else {
+	D(std::cerr << __func__ << "(): fetched instruction from IdxToVar" << std::endl;)
     auto it = std::find(IdxToVar.begin(), IdxToVar.end(), V);
-    if (it == IdxToVar.end()) return nullptr;
+    if (it == IdxToVar.end()){
+	D(std::cerr << "returning null Pointer" << std::endl;)
+	 return nullptr;
+	}
+	D(std::cerr << "returning IdxToVar value " << it - IdxToVar.begin() << std::endl;)
     return *it;
   }
 }
