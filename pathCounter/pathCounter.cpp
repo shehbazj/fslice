@@ -36,6 +36,35 @@ struct Taint {
   bool is_obj:1;	// S.J. Is true for objects allocated on heap
 } __attribute__((packed));
 
+std::map<int , const char *> Predicate {
+  // Opcode        
+{   0, "FCMP_FALSE"}, 
+{   1, "FCMP_OEQ"  }, 
+{   2, "FCMP_OGT"  }, 
+{   3, "FCMP_OGE"  }, 
+{   4, "FCMP_OLT"  }, 
+{   5, "FCMP_OLE"  }, 
+{   6, "FCMP_ONE"  }, 
+{   7, "FCMP_ORD"  }, 
+{   8, "FCMP_UNO"  }, 
+{   9, "FCMP_UEQ"  }, 
+{  10, "FCMP_UGT"  }, 
+{  11, "FCMP_UGE"  }, 
+{  12, "FCMP_ULT"  }, 
+{  13, "FCMP_ULE"  }, 
+{  14, "FCMP_UNE"  }, 
+{  15, "FCMP_TRUE" }, 
+{  32, "ICMP_EQ"  } , 
+{  33, "ICMP_NE"  } , 
+{  34, "ICMP_UGT" } , 
+{  35, "ICMP_UGE" } , 
+{  36, "ICMP_ULT" } , 
+{  37, "ICMP_ULE" } , 
+{  38, "ICMP_SGT" } , 
+{  39, "ICMP_SGE" } , 
+{  40, "ICMP_SLT" } , 
+{  41, "ICMP_SLE" } , 
+};
 
 
 // Expands into __fslice_load1 (addr) { return Load (addr, 1) };
@@ -82,13 +111,15 @@ class pathCounter : public ModulePass {
   void printString(Instruction *I, const char *s);
 
 uint64_t  LoadStoreSize(const DataLayout *DL, Value *P);
-  void runOnLoad(BasicBlock *B, LoadInst *LI);
+  void runOnLoad(LoadInst *LI);
   void runOnStore(StoreInst *SI);
-  void runOnCall(BasicBlock *B, CallInst *CI);
+  void runOnBranch(BranchInst *BI);
+  void runOnCall(CallInst *CI);
   void runOnReturn(BasicBlock *B, ReturnInst *RI);
   void runOnUnary(BasicBlock *B, UnaryInstruction *I);
+  void addMarkerTaint();
   void runOnBinary(BasicBlock *B, BinaryOperator *I);
-	void runOnICmp(BasicBlock *B, ICmpInst *I);
+	void runOnICmp(ICmpInst *I);
   void getFunctionPPWithoutCalls();
 	void cleanup();
 	void instrumentModule(Module *M);
@@ -141,6 +172,10 @@ uint64_t  LoadStoreSize(const DataLayout *DL, Value *P);
   uint64_t getTaint(Value *V);
   Value *LoadTaint(Instruction *I, Value *V);
 
+	// stores loopBack Basic Block and its successor basic block that creates
+	// the loop
+	std::map<BasicBlock *, BasicBlock *> loopBackBBs;
+
 	std::map<BasicBlock *, int> *CFMap = new std::map <BasicBlock *, int>;
 	std::map<BasicBlock *, int> *PPMap = new std::map <BasicBlock *, int>;
 	std::map<const char *, int> functionPPMap;
@@ -149,6 +184,9 @@ uint64_t  LoadStoreSize(const DataLayout *DL, Value *P);
 	// for each BB in that function.
 	std::map <const char *, void *> functionConvergenceFactorMap;
 	void taintInstructions();
+
+	void calculateLoopFactor(Module *M);
+	void detectLoop(BasicBlock *currentBB, std::stack<BasicBlock *> *bbStack);
 
   // Creates a function returning void on some arbitrary number of argument
   // types.
@@ -189,6 +227,7 @@ uint64_t  LoadStoreSize(const DataLayout *DL, Value *P);
 			   // this instruction is always entry
 
   BasicBlock *LocalBB;
+  BasicBlock *entryBB;
   std::vector<IInfo> IIs;
   std::vector<VSet> VSets;
   std::map<Value *,VSet *> VtoVSet;
@@ -208,6 +247,7 @@ uint64_t assignTaint(Value *Val);
 // creates a map of function and map of instruction and taints
 
   std::map<Function *, std::map<Value *, uint64_t> *> FTMapMap;
+  std::map<Value *, uint64_t > MarkerMap;
   std::map <Value *, uint64_t > * TMap;
 // Map of all constant values being referred.
   std::map <uint64_t, uint64_t> * CMap; 
@@ -838,6 +878,7 @@ void pathCounter::evaluatePath(std::map< std::string, unsigned> *GbbMap, std::st
 void pathCounter::runOnFunction()
 {
 	numVSets = 0;
+//	mark command line arguments - argc and argv. taint them and keep track of them
 	taintInstructions();
 	runOnArgs();
 	runOnInstructions();
@@ -851,34 +892,34 @@ uint64_t pathCounter::assignTaint(Value *V)
 {
 	uint64_t integer;
 	if (ConstantInt *CI = dyn_cast<ConstantInt>(V)){
-		if(CI->getBitWidth() <=32){
-			integer = CI->getSExtValue();
+		if(CI->getBitWidth() <=64){
+			integer = CI->getZExtValue();
 			if(CMap->find(integer) == CMap->end()){
 				//std::cerr << __func__ << "():Assigning int constant " << integer << " taint value " << taintNo << std::endl;
 				std::cerr << "t" << taintNo << "=V(" << integer << ")" << std::endl;
 				(*CMap)[integer] = taintNo++;
 			}
+			D(std::cerr << "integer value " << integer << " has taint " << (*CMap)[integer];)
 			//std::cerr << __func__ << "():returning int constant " << integer << " taint value " << (*CMap)[integer] << std::endl;
 			return (*CMap)[integer];
 		}else{
-			std::cerr << __func__ << "():Found Integer Type value with non 32 bit size" << std::endl;
+			std::cerr << __func__ << "():Found Integer Type value with non 64 bit size" << std::endl;
 		}
 	}
 	if(TMap->find(V) == TMap->end()){
-		std::cerr << __func__ << "():Assigning new taint value " << taintNo << std::endl;
+		D(std::cerr << __func__ << "():Assigning new taint value " << taintNo << std::endl;)
 		(*TMap)[V]=taintNo++;
-	}
+	}	
 	return (*TMap)[V];	
 }
 
 void pathCounter::assignTaint(Value *Dest, Value *Src)
 {
 	auto srcTaint = getTaint(Src);
-
 	if(srcTaint == 0){
-		assignTaint(Src);
+		srcTaint = assignTaint(Src);
 	}
-	//std::cerr << __func__ << "():assigning taint of source " << srcTaint << std::endl;
+	D(std::cerr << __func__ << "():assigning taint of source " << srcTaint << std::endl;)
 	(*TMap)[Dest] = srcTaint;
 }
 
@@ -913,23 +954,29 @@ void pathCounter:: runOnInstructions(void)
 {
 	for (auto &B : *F) {
 		for (auto &I : B) {
-		/*if (LoadInst *LI = dyn_cast<LoadInst>(II.I)) {
-			runOnLoad(LI); 
-		} else */if (StoreInst *SI = dyn_cast<StoreInst>(&I)) {
-			runOnStore(SI);
-		} /*else if (MemIntrinsic *MI = dyn_cast<MemIntrinsic>(II.I)) {
-			runOnIntrinsic(II.B, MI);
-		} else if (CallInst *CI = dyn_cast<CallInst>(II.I)) {
-			runOnCall(II.B, CI);
-		} else if (ReturnInst *RI = dyn_cast<ReturnInst>(II.I)) {
-			runOnReturn(II.B, RI);
-		} else if (UnaryInstruction *UI = dyn_cast<UnaryInstruction>(II.I)) {
-			runOnUnary(II.B, UI);
-		} else if (BinaryOperator *BI = dyn_cast<BinaryOperator>(II.I)) {
-			runOnBinary(II.B, BI);
-		} else if (ICmpInst *IC = dyn_cast<ICmpInst>(II.I)) {
-			runOnICmp(II.B, IC);
-		}*/
+			if (LoadInst *LI = dyn_cast<LoadInst>(&I)) {
+				runOnLoad(LI); 
+			} else if (StoreInst *SI = dyn_cast<StoreInst>(&I)) {
+				runOnStore(SI);
+			} else if (BranchInst *BI = dyn_cast<BranchInst>(&I)) {
+				runOnBranch(BI);
+			} 
+			/*
+ 				else if (MemIntrinsic *MI = dyn_cast<MemIntrinsic>(II.I)) {
+				runOnIntrinsic(II.B, MI);
+			} */
+			else if (CallInst *CI = dyn_cast<CallInst>(&I)) {
+				runOnCall(CI);
+			} /*else if (ReturnInst *RI = dyn_cast<ReturnInst>(II.I)) {
+				runOnReturn(II.B, RI);
+			} else if (UnaryInstruction *UI = dyn_cast<UnaryInstruction>(II.I)) {
+				runOnUnary(II.B, UI);
+			} else if (BinaryOperator *BI = dyn_cast<BinaryOperator>(II.I)) {
+				runOnBinary(II.B, BI);
+			} */
+			else if (ICmpInst *IC = dyn_cast<ICmpInst>(&I)) {
+				runOnICmp(IC);
+			}
 		}
 	}
 }
@@ -942,6 +989,25 @@ void pathCounter:: cleanup()
 	IdxToVar.clear();
 }
 
+void pathCounter:: addMarkerTaint() 
+{
+//	std::cerr << "Created Marker with taint " << taintNo << std::endl;
+//	std::cerr << "Function Name = " << F->getName().data() << std::endl;
+//	for( auto &V : F->args()){
+//		uint64_t constIntValue=0;
+//		std::cerr << "Argument Type = " << V.getType() << std::endl;
+//		if (ConstantInt* CI = dyn_cast<ConstantInt>(&V)) {
+//			std::cerr << "Is a constant Value " << std::endl;
+//		 // if (CI->getBitWidth() <= 32) {
+//		    constIntValue = CI->getSExtValue();
+//  		 // }
+//		}
+//		std::cerr << "first argument is " << constIntValue << std::endl;
+//		break;
+//	}
+//	//MarkerMap[V] = taintNo++;
+}
+
 void pathCounter::instrumentModule(Module *M_)
 {
 	// initialization stuff
@@ -952,44 +1018,117 @@ void pathCounter::instrumentModule(Module *M_)
         VoidTy = Type::getVoidTy(*C);
         VoidPtrTy = PointerType::getUnqual(IntegerType::getInt8Ty(*C));
 
+//	for (auto &F_ : M->functions()) {
+//		F = &F_;
+//		if (F->isDeclaration() && !(strcmp(F->getName().data(), "_mark"))) {
+//			std::cerr << "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX Calling Marker " << std::endl;
+//			addMarkerTaint();
+//		}
+//	}
+
 	for (auto &F_ : M->functions()) {
 		F = &F_;
-		//if (F->isDeclaration()) {
-		//	if (F->getName() == "memset") {
-		//		F->setName("__fslice_memset");
-		//	} else if (F->getName() == "memcpy") {
-		//		F->setName("__fslice_memcpy");
-		//	} else if (F->getName() == "memmove") {
-		//		F->setName("__fslice_memmove");
-		//	} else if (F->getName() == "strcpy") {
-		//		F->setName("__fslice_strcpy");
-		//	} else if (F->getName() == "bzero") {
-		//		F->setName("__fslice_bzero");
-		//	} else if (F->getName() == "malloc") {
-		//		F->setName("__fslice_malloc");
-		//	} else if (F->getName() == "calloc") {
-		//		F->setName("__fslice_calloc");
-		//	} else if (F->getName() == "mark") {
-		//		F->setName("__fslice_mark");
-		//	} else if (F->getName() == "strlen") {
-		//		F->setName("__fslice_strlen");
-		//		//      printFunctionName(F->getName().data());
-		//	}
-		//} else {
 		if (!F->isDeclaration()) 
 			runOnFunction();
-		//}
 	}
 }
+
+// detect loop entry blocks in a program. add the pair
+// <entry_block: successor_loop_block> to loopBackBBs
+
+void pathCounter::detectLoop(BasicBlock *currentBB, std::stack<BasicBlock *> *bbStack)
+{
+	int numSuccessors = currentBB->getTerminator()->getNumSuccessors();
+	if(!isLoopBack(currentBB, bbStack)){
+		bbStack->push(currentBB);
+		for(auto succ = 0 ;  succ < numSuccessors ; succ++){
+			auto BB = currentBB->getTerminator()->getSuccessor(succ);
+			detectLoop(BB, bbStack);			
+		}
+		bbStack->pop();	
+	}else{
+		std::cerr << "detected " << currentBB->getName().data() << " as loopback BB" << std::endl;
+		// check which successor block is the loopback block
+		for(auto succ =0 ; succ < numSuccessors ; succ++){
+			auto BB = currentBB->getTerminator()->getSuccessor(succ);
+			if(isLoopBack(BB, bbStack)){
+				std::cerr << currentBB->getName().data() << "->" << BB->getName().data() << std::endl;
+				loopBackBBs[currentBB] = BB;
+				return;
+			}
+		}
+		assert(0);
+	}
+}
+
+
+// scan through loop entry bb. get comparator taints.
+// go recursively through all bbs from the child bb of
+// loop entry bb that leads to a loop. explore path till
+// you reach the loop entry bb.
+//
+//void pathCounter::getLoopDependentTaints()
+//{
+//	// contains entire functions loopBlock Taints
+//	std::vector<uint64_t> loopTaints ;
+//
+//	for(auto &loopBackBBPair : loopBackBBs)	{
+//		// first, get the loop back bb, get comparator instruction
+//		// get taint of iterator.
+//			
+//		auto loopBackBB = loopBackBBPair.first;
+//		auto childBB = loopBackBBPair.second;
+//							
+//		int iteratorTaint = getIteratorTaint(loopBackBB);
+//		// call recursive block processing instruction that will
+//		// go through each successor block until loopback block
+//		// is reached again.
+//
+//		getloopVariables(childBB, loopTaints);
+//	}
+//	
+//	// for each bb, check if any operation involves loop 
+//	// iterator variable. keep track of these taint values
+//	
+//}
+//
+//void pathCounter::scanLoopDependentBranch()
+//{
+//}
+//
+//void pathCounter::calculateLoopFactor(Module *M)
+//{
+//	// detect loops. detect loop condition.
+//	for (auto &F_ : M->functions()) {
+//		F = &F_;
+//		if (!F->isDeclaration()) {
+//			entryBB = &(F->getEntryBlock());
+//			auto currentBB = entryBB;
+//			std::stack <BasicBlock *> bbStack;
+//			detectLoop(currentBB, &bbStack);
+//			// find all dependent taints on loop.
+//			auto loopDependentTaints = getLoopDependentTaints();
+//			// determine if there are any branch conditions
+//			// that depend on loop.
+//			/*
+//			auto loopFactor = scanLoopDependentBranch();
+//			// keep track of loopFactor for loop
+//			//addBBLoopFactor();
+//			*/
+//		}
+//	}
+//}
 
 bool pathCounter::runOnModule(Module &M_) {
 	CMap = new std::map<uint64_t , uint64_t>;
 	std::map< std::string, unsigned> GbbMap;
 	// instrument the code for tainting
 	instrumentModule(&M_);
+//	calculateLoopFactor(&M_);
 	
 //	// get different possible paths from each basic block.
 //	getModuleLevelPP(&GbbMap);
+//	printGbbMap(&GbbMap);
 //
 //	// get path constraints for each path.
 //	std::cerr << "EVALUATE PATH" << std::endl;
@@ -1098,11 +1237,18 @@ uint64_t pathCounter:: LoadStoreSize(const DataLayout *DL, Value *P) {
 
 uint64_t pathCounter::getTaint(Value *V) {
   if (V->getType()->isFPOrFPVectorTy()) return 0;
-	if(TMap->find(V) == TMap->end()){
-		return 0;
-	}else{
+	if(TMap->find(V) != TMap->end()){
 		return (*TMap)[V];
 	}
+	if (ConstantInt *CI = dyn_cast<ConstantInt>(V)){
+		if(CI->getBitWidth() <=32){
+			auto integer = CI->getSExtValue();
+			if(CMap->find(integer) != CMap->end()){
+				return (*CMap)[integer];
+			}
+		}
+	}		
+	return 0;
 }
 
 // Get a value that contains the tainted data for a local variable, or zero if
@@ -1139,11 +1285,56 @@ void pathCounter::runOnStore(StoreInst *SI) {
 	// store taint of Value, to taint of PointerAddress
 	// get Taint of Value, get taint of Pointer Address
 	// store Value of Pointer address, taint of Value
-	//std::cerr << __func__ << "():" << std::endl;
 
 	auto V = SI->getValueOperand();
 	auto P = SI->getPointerOperand();
 	assignTaint(P, V);
+}
+
+void pathCounter::runOnCall(CallInst *CI) {
+	uint64_t constIntValue =0;
+	if(CI !=nullptr && CI->getCalledFunction() != nullptr && (CI->getCalledFunction()->hasName())){
+		//std::cerr << "FunCalled " << CI->getCalledFunction()->getName().data() << std::endl;
+		if(!strcmp(CI->getCalledFunction()->getName().data(), "_mark")){
+			if(ConstantInt *I = dyn_cast<ConstantInt>(CI->getArgOperand(0))){
+		 		if (I->getBitWidth() <= 64) {
+				    constIntValue = I->getZExtValue();
+  			 	}
+			}
+		std::cerr << " constaint Int Value " << constIntValue << std::endl;
+		}
+	}
+}
+
+void pathCounter::runOnBranch(BranchInst *BI) {
+	int numSuccessors = BI->getNumSuccessors();
+	auto BB = BI->getParent();
+	if(BI->isConditional()){
+		auto cond = BI->getCondition();
+		auto condTaint = getTaint(cond);
+		if(condTaint == 0){
+			condTaint = assignTaint(cond);
+		}
+		std::cerr << "BRANCH_COND "<< BB->getParent()->getName().data() << " " << "t" << condTaint << " ( " ;
+		for(auto i = 0; i < numSuccessors ; i++){
+			auto bbName = BI->getSuccessor(i)->getName().data();
+			std::cerr << bbName << " ";
+		}
+		std::cerr << ")" << std::endl;
+	}else{
+		std::cerr << "BRANCH_UNCOND " << BB->getParent()->getName().data() << " " ;
+		for(auto i = 0 ; i < numSuccessors ; i++)
+			std::cerr << BI->getSuccessor(i) -> getName().data() << " ";
+		std::cerr << std::endl;
+	}
+}
+
+void pathCounter::runOnLoad(LoadInst *LI) {
+	// eg. %0 = load *x
+	// get taint of pointer, get taint of LI instruction
+	// assign pointer taint to LI instruction
+	auto P = LI->getPointerOperand();
+	assignTaint(LI, P);
 }
 
 
@@ -1181,17 +1372,23 @@ void pathCounter::runOnReturn(BasicBlock *B, ReturnInst *RI) {
 //	}
 //	std::cerr  << B->getName().data()<< "Binary Operand " << I->getOpcodeName() << " Op1 = " << taintMap[(uint64_t)I->getOperand(0)] << " Op2 = " << taintMap[(uint64_t)I->getOperand(1)] << std::endl;
 //}
-//
-//void pathCounter::runOnICmp(BasicBlock *B, ICmpInst *I) {
-//	if(taintMap.find((uint64_t)I->getOperand(0)) == taintMap.end()){
-//		taintMap[(uint64_t)I->getOperand(0)] = taintVal++;
-//	}
-//	if(taintMap.find((uint64_t)I->getOperand(1)) == taintMap.end()){
-//		taintMap[(uint64_t)I->getOperand(1)] = taintVal++;
-//	}
-//	auto Pred = I->getUnsignedPredicate();
-//	std::cerr  << B->getName().data()<< "Predicate " << Pred << "LO = " << taintMap[(uint64_t)I->getOperand(0)] << " RO = " << taintMap[(uint64_t)I-> getOperand(1)] << std::endl;
-//}
+
+void pathCounter::runOnICmp(ICmpInst *I) {
+	auto op1 = I->getOperand(0);
+	auto op2 = I->getOperand(1);
+	auto Pred = I->getUnsignedPredicate();
+
+	auto t1 = getTaint(op1);
+	if(t1 == 0)
+		t1 = assignTaint(op1);
+	auto t2 = getTaint(op2);
+	if(t2 == 0)
+		t2 = assignTaint(op2);
+	auto iTaint = getTaint(I);
+				
+	std::cerr << "t" << iTaint << "=(" << Predicate[Pred] << ",t" << t1 << ",t" << t2 << ")" << std::endl;
+}
+
 //
 //void pathCounter::runOnIntrinsic(BasicBlock *B, MemIntrinsic *MI) {
 //  const char *FName = nullptr;
