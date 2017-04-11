@@ -133,12 +133,12 @@ uint64_t  LoadStoreSize(const DataLayout *DL, Value *P);
 	bool processedFunctionCaller();
 	void analyseFunctionCalls();
   void runOnIntrinsic(BasicBlock *B, MemIntrinsic *MI);
-	void runOnInstructions(void);
+	void runOnInstructions(BasicBlock *B);
   int getFunctionPP(std::stack <const char*> *FStack, std::map<std::string, unsigned> *GbbMap);
 	//void processBlock(BasicBlock *BB);
 	std::vector<const char *> processedBlocks;
   int getPPOfFunctionCalls(BasicBlock *BB, std::stack <const char *> *FStack, std::map<std::string, unsigned> *GbbMap);
-	void processDFS(BasicBlock *B, std::stack <const char *> *BBStack);
+	void processDFS(BasicBlock *B, std::stack <BasicBlock *> *BBStack);
 	void processBasicBlock(BasicBlock *BB);
   //BasicBlock *getBB(const char *name);
 	int getCF(BasicBlock *BB);
@@ -159,6 +159,7 @@ uint64_t  LoadStoreSize(const DataLayout *DL, Value *P);
 	bool inStack(const char *element, std::stack<const char *> *bbStack);
 	const char * getAlternatePath(const char *currentBB, std::stack <const char *> *bbStack);
 	BasicBlock * getAlternatePath(BasicBlock *ForLoopBlock, std::stack <const char *> *bbStack);
+	BasicBlock * getAlternatePath(BasicBlock *ForLoopBlock, std::stack <BasicBlock *> *bbStack);
 	bool isTerminalFunction();
 	void getTerminalFunctions();
 	void processBBInstructions(std::map <std::string, unsigned> *GbbMap, std::list <std::string > *traversedBB, std::string funName);
@@ -216,6 +217,7 @@ uint64_t  LoadStoreSize(const DataLayout *DL, Value *P);
   }
 
   Function *F;
+  BasicBlock *BBLocal;
   Module *M;
   LLVMContext *C;
   const DataLayout *DL;
@@ -231,7 +233,6 @@ uint64_t  LoadStoreSize(const DataLayout *DL, Value *P);
   std::vector<IInfo> IIs;
   std::vector<VSet> VSets;
   std::map<Value *,VSet *> VtoVSet;
-  std::map<Value *, uint64_t> ValueTaintMap;
   std::map<uint64_t, uint64_t> ConstantTaintMap;
   std::vector<Value *> IdxToVar;
 //  std::vector<uint64_t  IdxToVar;
@@ -247,7 +248,10 @@ uint64_t assignTaint(Value *Val);
 // creates a map of function and map of instruction and taints
 
   std::map<Function *, std::map<Value *, uint64_t> *> FTMapMap;
-  std::map<Value *, uint64_t > MarkerMap;
+// marks value with symbolic type [0,1,2 for INT, STR, VAR_ARRAY]
+  std::map<Value *, uint64_t> markerMap;
+// created for every function. stores "value" of each operator
+// and operand and corresponding taint number
   std::map <Value *, uint64_t > * TMap;
 // Map of all constant values being referred.
   std::map <uint64_t, uint64_t> * CMap; 
@@ -634,6 +638,63 @@ bool pathCounter:: inStack(const char *element, std::stack<const char *> *bbStac
 
 }
 
+
+// scan through stack for LoopBlockName. Record path that was stored in the stack 
+// i.e. the basic block that was selected in LoopBlockName. return alternate path.
+
+BasicBlock * pathCounter:: getAlternatePath( BasicBlock *LoopBlock, std::stack <BasicBlock *> *bbStack)
+{
+	std::stack <BasicBlock *> temp;
+	BasicBlock *prev;
+	const char *LoopBlockName = LoopBlock->getName().data();
+
+	D(std::cerr << __func__ << "(): LoopbackBlock = " << LoopBlockName << std::endl;)
+
+	if(bbStack->empty()){
+		D(std::cerr << "STACK empty, returning" << std::endl;)
+		return NULL;
+	}
+	// remove first loopback block from stack.
+	auto top = bbStack->top();
+	temp.push(top);
+	bbStack->pop();
+	
+	// search for the second loopback block.
+	while(!bbStack->empty()){
+		auto top = bbStack->top();
+		if(!strcmp(top->getName().data(),LoopBlockName)){
+			D(std::cerr << "top is " << top << std::endl;)
+			break;	
+		}else{
+			prev = top;	// prev contains element traversed after LoopBlock
+			D(std::cerr << "top is " << top << " assigning prev " << prev << std::endl;)
+			temp.push(top);
+			bbStack->pop();
+		}
+	}
+	//std::cerr << "restoring stack " << std::endl;
+	while(!temp.empty()){
+		auto top = temp.top();
+		bbStack->push(top);
+		temp.pop();
+	}		
+	D(std::cerr << __func__ << "(): previous traversed block = " << prev << std::endl;)
+	auto TermInst = LoopBlock->getTerminator();
+	BasicBlock *prevBB;
+	for(unsigned i = 0; i < TermInst->getNumSuccessors() ; i++){
+		if(strcmp(TermInst->getSuccessor(i)->getName().data(),prev->getName().data()) != 0){	// not equal
+			D(std::cerr << __func__ << "(): returning alternate path " << TermInst->getSuccessor(i) << std::endl;)
+			return TermInst->getSuccessor(i);
+		}else{
+			prevBB = TermInst->getSuccessor(i);
+		}
+	}
+	
+	D(std::cerr << LoopBlock->getName().data() << "returning previous path " << prevBB->getName().data() << std::endl;)
+	return prevBB;
+}
+
+
 // scan through stack for LoopBlockName. Record path that was stored in the stack 
 // i.e. the basic block that was selected in LoopBlockName. return alternate path.
 
@@ -875,17 +936,25 @@ void pathCounter::evaluatePath(std::map< std::string, unsigned> *GbbMap, std::st
 	processBBInstructions(GbbMap, traversedBB, funName); // for the terminal Basic Block
 }
 
+/**
+ *  go through all basic blocks in function in depth first order and assign all operands 
+ *  appropriate taints when loop is detected, send all loop related basic blocks to loop 
+ *  detector logic where iterators will be identified, iterator incrementor will be 
+ *  determined additional constraints will be added.
+ * **/
 void pathCounter::runOnFunction()
 {
-	numVSets = 0;
-//	mark command line arguments - argc and argv. taint them and keep track of them
 	taintInstructions();
 	runOnArgs();
-	runOnInstructions();
-//	auto count=0;
-//	for(auto &ValTaintPair : (*TMap)){
-//		std::cerr << count++ << "-->" << ValTaintPair.second << std::endl;
-//	}
+
+	std::cerr << F->getName().data() << std::endl;
+	BBLocal = &(F->getEntryBlock());
+	std::stack <BasicBlock *> BBStack; 
+	assert(BBLocal != nullptr);
+	BBStack.push(BBLocal);
+	processDFS(BBLocal, &BBStack);
+	BBStack.pop();
+
 }
 
 uint64_t pathCounter::assignTaint(Value *V)
@@ -950,33 +1019,31 @@ void pathCounter::runOnArgs(void) {
 	}
 }
 
-void pathCounter:: runOnInstructions(void)
+void pathCounter:: runOnInstructions(BasicBlock *B)
 {
-	for (auto &B : *F) {
-		for (auto &I : B) {
-			if (LoadInst *LI = dyn_cast<LoadInst>(&I)) {
-				runOnLoad(LI); 
-			} else if (StoreInst *SI = dyn_cast<StoreInst>(&I)) {
-				runOnStore(SI);
-			} else if (BranchInst *BI = dyn_cast<BranchInst>(&I)) {
-				runOnBranch(BI);
-			} 
-			/*
- 				else if (MemIntrinsic *MI = dyn_cast<MemIntrinsic>(II.I)) {
-				runOnIntrinsic(II.B, MI);
-			} */
-			else if (CallInst *CI = dyn_cast<CallInst>(&I)) {
-				runOnCall(CI);
-			} /*else if (ReturnInst *RI = dyn_cast<ReturnInst>(II.I)) {
-				runOnReturn(II.B, RI);
-			} else if (UnaryInstruction *UI = dyn_cast<UnaryInstruction>(II.I)) {
-				runOnUnary(II.B, UI);
-			} else if (BinaryOperator *BI = dyn_cast<BinaryOperator>(II.I)) {
-				runOnBinary(II.B, BI);
-			} */
-			else if (ICmpInst *IC = dyn_cast<ICmpInst>(&I)) {
-				runOnICmp(IC);
-			}
+	for (auto I = B->begin(); I != B->end() ; I++) {
+		if (LoadInst *LI = dyn_cast<LoadInst>(I)) {
+			runOnLoad(LI); 
+		} else if (StoreInst *SI = dyn_cast<StoreInst>(I)) {
+			runOnStore(SI);
+		} else if (BranchInst *BI = dyn_cast<BranchInst>(I)) {
+			runOnBranch(BI);
+		} 
+		/*
+			else if (MemIntrinsic *MI = dyn_cast<MemIntrinsic>(II.I)) {
+			runOnIntrinsic(II.B, MI);
+		} */
+		else if (CallInst *CI = dyn_cast<CallInst>(I)) {
+			runOnCall(CI);
+		} /*else if (ReturnInst *RI = dyn_cast<ReturnInst>(II.I)) {
+			runOnReturn(II.B, RI);
+		} else if (UnaryInstruction *UI = dyn_cast<UnaryInstruction>(II.I)) {
+			runOnUnary(II.B, UI);
+		} else if (BinaryOperator *BI = dyn_cast<BinaryOperator>(II.I)) {
+			runOnBinary(II.B, BI);
+		} */
+		else if (ICmpInst *IC = dyn_cast<ICmpInst>(I)) {
+			runOnICmp(IC);
 		}
 	}
 }
@@ -989,25 +1056,6 @@ void pathCounter:: cleanup()
 	IdxToVar.clear();
 }
 
-void pathCounter:: addMarkerTaint() 
-{
-//	std::cerr << "Created Marker with taint " << taintNo << std::endl;
-//	std::cerr << "Function Name = " << F->getName().data() << std::endl;
-//	for( auto &V : F->args()){
-//		uint64_t constIntValue=0;
-//		std::cerr << "Argument Type = " << V.getType() << std::endl;
-//		if (ConstantInt* CI = dyn_cast<ConstantInt>(&V)) {
-//			std::cerr << "Is a constant Value " << std::endl;
-//		 // if (CI->getBitWidth() <= 32) {
-//		    constIntValue = CI->getSExtValue();
-//  		 // }
-//		}
-//		std::cerr << "first argument is " << constIntValue << std::endl;
-//		break;
-//	}
-//	//MarkerMap[V] = taintNo++;
-}
-
 void pathCounter::instrumentModule(Module *M_)
 {
 	// initialization stuff
@@ -1017,14 +1065,6 @@ void pathCounter::instrumentModule(Module *M_)
         IntPtrTy = Type::getIntNTy(*C,  DL->getPointerSizeInBits());
         VoidTy = Type::getVoidTy(*C);
         VoidPtrTy = PointerType::getUnqual(IntegerType::getInt8Ty(*C));
-
-//	for (auto &F_ : M->functions()) {
-//		F = &F_;
-//		if (F->isDeclaration() && !(strcmp(F->getName().data(), "_mark"))) {
-//			std::cerr << "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX Calling Marker " << std::endl;
-//			addMarkerTaint();
-//		}
-//	}
 
 	for (auto &F_ : M->functions()) {
 		F = &F_;
@@ -1143,20 +1183,30 @@ bool pathCounter::runOnModule(Module &M_) {
 
 /*print all paths in DFS order*/
 
-void pathCounter :: processDFS(BasicBlock *B, std::stack<const char *> *BBStack)
+void pathCounter :: processDFS(BasicBlock *B, std::stack<BasicBlock *> *BBStack)
 {
 	if(B->getTerminator()->getNumSuccessors() == 0){
-		BBStack->push(B->getName().data());
-		printStack(BBStack);
-		BBStack->pop();
+		//BBStack->push(B);
+		//printStack(BBStack);
+		std::cerr << "PROCESSING BB " << B->getName().data() << std::endl;
+		runOnInstructions(B);
+		//BBStack->pop();
 		return ;
 	}else {
-		if(isLoopBack(B->getName().data(), BBStack)){
-			B = getAlternatePath(B, BBStack);
-			processDFS(B, BBStack);
+		if(isLoopBack(B, BBStack)){
+			// since we are processing each BB deriving their taint value, 
+			// we need not go through the non-loop branch, otherwise we will
+			// repeat the non-loop branch twice
+			return;
+			//B = getAlternatePath(B, BBStack);
+			//std::cerr << "PROCESSING BB " << B->getName().data() << std::endl;
+			//runOnInstructions(B);
+			//processDFS(B, BBStack);
 		}else{
+			std::cerr << "PROCESSING BB " << B->getName().data() << std::endl;
+			runOnInstructions(B);
 			for(unsigned int i = 0 ; i < B->getTerminator()->getNumSuccessors() ; i++){
-				BBStack->push(B->getName().data());
+				BBStack->push(B->getTerminator()->getSuccessor(i));
 				processDFS(B->getTerminator()->getSuccessor(i), BBStack);
 				BBStack->pop();
 			}
@@ -1299,30 +1349,36 @@ void pathCounter::runOnCall(CallInst *CI) {
 			if(ConstantInt *I = dyn_cast<ConstantInt>(CI->getArgOperand(0))){
 		 		if (I->getBitWidth() <= 64) {
 				    constIntValue = I->getZExtValue();
-  			 	}
+  			 	}else{
+					std::cerr << "ERROR: Value GT 64 bit detected" << std::endl;
+				}
 			}
-		std::cerr << " constaint Int Value " << constIntValue << std::endl;
+			auto markedVariable = CI->getArgOperand(1);
+		
+			markerMap[markedVariable] = constIntValue;
+			(*TMap)[markedVariable] = taintNo++;
+	
+			std::cerr << " constaint Int Value " << constIntValue << std::endl;
 		}
 	}
 }
 
 void pathCounter::runOnBranch(BranchInst *BI) {
 	int numSuccessors = BI->getNumSuccessors();
-	auto BB = BI->getParent();
 	if(BI->isConditional()){
 		auto cond = BI->getCondition();
 		auto condTaint = getTaint(cond);
 		if(condTaint == 0){
 			condTaint = assignTaint(cond);
 		}
-		std::cerr << "BRANCH_COND "<< BB->getParent()->getName().data() << " " << "t" << condTaint << " ( " ;
+		std::cerr << "BRANCH_COND " << " " << "t" << condTaint << " ( " ;
 		for(auto i = 0; i < numSuccessors ; i++){
 			auto bbName = BI->getSuccessor(i)->getName().data();
 			std::cerr << bbName << " ";
 		}
 		std::cerr << ")" << std::endl;
 	}else{
-		std::cerr << "BRANCH_UNCOND " << BB->getParent()->getName().data() << " " ;
+		std::cerr << "BRANCH_UNCOND " << " " ;
 		for(auto i = 0 ; i < numSuccessors ; i++)
 			std::cerr << BI->getSuccessor(i) -> getName().data() << " ";
 		std::cerr << std::endl;
