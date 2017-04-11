@@ -16,6 +16,7 @@
 #include <list>
 #include <string>
 #include <stack>
+#include "sym.h"
 //#include "taintProcessor.cpp"
 
 
@@ -115,14 +116,16 @@ uint64_t  LoadStoreSize(const DataLayout *DL, Value *P);
   void runOnStore(StoreInst *SI);
   void runOnBranch(BranchInst *BI);
   void runOnCall(CallInst *CI);
-  void runOnReturn(BasicBlock *B, ReturnInst *RI);
-  void runOnUnary(BasicBlock *B, UnaryInstruction *I);
+  void markVariable(CallInst *CI);
+  void runOnReturn(ReturnInst *RI);
+  void runOnUnary(UnaryInstruction *I);
+  void runOnCast(CastInst *I);
   void addMarkerTaint();
-  void runOnBinary(BasicBlock *B, BinaryOperator *I);
+  void runOnBinary(BinaryOperator *I);
 	void runOnICmp(ICmpInst *I);
   void getFunctionPPWithoutCalls();
 	void cleanup();
-	void instrumentModule(Module *M);
+	void taintBasicBlocks(Module *M);
 
 
 	void Store(uint64_t addr, uint64_t size, Taint t);
@@ -132,7 +135,7 @@ uint64_t  LoadStoreSize(const DataLayout *DL, Value *P);
 	bool markedProcessed();
 	bool processedFunctionCaller();
 	void analyseFunctionCalls();
-  void runOnIntrinsic(BasicBlock *B, MemIntrinsic *MI);
+// 	void runOnIntrinsic(MemIntrinsic *MI);
 	void runOnInstructions(BasicBlock *B);
   int getFunctionPP(std::stack <const char*> *FStack, std::map<std::string, unsigned> *GbbMap);
 	//void processBlock(BasicBlock *BB);
@@ -248,8 +251,8 @@ uint64_t assignTaint(Value *Val);
 // creates a map of function and map of instruction and taints
 
   std::map<Function *, std::map<Value *, uint64_t> *> FTMapMap;
-// marks value with symbolic type [0,1,2 for INT, STR, VAR_ARRAY]
-  std::map<Value *, uint64_t> markerMap;
+// marks <value, symbolic type> [0,1,2 for INT, STR, VAR_ARRAY]
+  std::map<Value *, uint64_t> markerTypeMap;
 // created for every function. stores "value" of each operator
 // and operand and corresponding taint number
   std::map <Value *, uint64_t > * TMap;
@@ -989,6 +992,7 @@ void pathCounter::assignTaint(Value *Dest, Value *Src)
 		srcTaint = assignTaint(Src);
 	}
 	D(std::cerr << __func__ << "():assigning taint of source " << srcTaint << std::endl;)
+	std::cerr << "t" << (*TMap)[Dest] << "=t" << srcTaint << std::endl;
 	(*TMap)[Dest] = srcTaint;
 }
 
@@ -1028,20 +1032,17 @@ void pathCounter:: runOnInstructions(BasicBlock *B)
 			runOnStore(SI);
 		} else if (BranchInst *BI = dyn_cast<BranchInst>(I)) {
 			runOnBranch(BI);
-		} 
-		/*
-			else if (MemIntrinsic *MI = dyn_cast<MemIntrinsic>(II.I)) {
-			runOnIntrinsic(II.B, MI);
-		} */
-		else if (CallInst *CI = dyn_cast<CallInst>(I)) {
+		} /*else if (MemIntrinsic *MI = dyn_cast<MemIntrinsic>(I)) {
+			runOnIntrinsic(MI);
+		}*/ else if (CallInst *CI = dyn_cast<CallInst>(I)) {
 			runOnCall(CI);
-		} /*else if (ReturnInst *RI = dyn_cast<ReturnInst>(II.I)) {
-			runOnReturn(II.B, RI);
-		} else if (UnaryInstruction *UI = dyn_cast<UnaryInstruction>(II.I)) {
-			runOnUnary(II.B, UI);
-		} else if (BinaryOperator *BI = dyn_cast<BinaryOperator>(II.I)) {
-			runOnBinary(II.B, BI);
-		} */
+		} else if (ReturnInst *RI = dyn_cast<ReturnInst>(I)) {
+			runOnReturn(RI);
+		} else if (CastInst *CI = dyn_cast<CastInst>(I)) {
+			runOnCast(CI);
+		} else if (BinaryOperator *BI = dyn_cast<BinaryOperator>(I)) {
+			runOnBinary(BI);
+		}
 		else if (ICmpInst *IC = dyn_cast<ICmpInst>(I)) {
 			runOnICmp(IC);
 		}
@@ -1056,7 +1057,7 @@ void pathCounter:: cleanup()
 	IdxToVar.clear();
 }
 
-void pathCounter::instrumentModule(Module *M_)
+void pathCounter::taintBasicBlocks(Module *M_)
 {
 	// initialization stuff
         M = M_;
@@ -1163,11 +1164,10 @@ bool pathCounter::runOnModule(Module &M_) {
 	CMap = new std::map<uint64_t , uint64_t>;
 	std::map< std::string, unsigned> GbbMap;
 	// instrument the code for tainting
-	instrumentModule(&M_);
-//	calculateLoopFactor(&M_);
+	taintBasicBlocks(&M_);
 	
 //	// get different possible paths from each basic block.
-//	getModuleLevelPP(&GbbMap);
+	getModuleLevelPP(&GbbMap);
 //	printGbbMap(&GbbMap);
 //
 //	// get path constraints for each path.
@@ -1194,14 +1194,7 @@ void pathCounter :: processDFS(BasicBlock *B, std::stack<BasicBlock *> *BBStack)
 		return ;
 	}else {
 		if(isLoopBack(B, BBStack)){
-			// since we are processing each BB deriving their taint value, 
-			// we need not go through the non-loop branch, otherwise we will
-			// repeat the non-loop branch twice
 			return;
-			//B = getAlternatePath(B, BBStack);
-			//std::cerr << "PROCESSING BB " << B->getName().data() << std::endl;
-			//runOnInstructions(B);
-			//processDFS(B, BBStack);
 		}else{
 			std::cerr << "PROCESSING BB " << B->getName().data() << std::endl;
 			runOnInstructions(B);
@@ -1291,8 +1284,8 @@ uint64_t pathCounter::getTaint(Value *V) {
 		return (*TMap)[V];
 	}
 	if (ConstantInt *CI = dyn_cast<ConstantInt>(V)){
-		if(CI->getBitWidth() <=32){
-			auto integer = CI->getSExtValue();
+		if(CI->getBitWidth() <=64){
+			auto integer = CI->getZExtValue();
 			if(CMap->find(integer) != CMap->end()){
 				return (*CMap)[integer];
 			}
@@ -1341,24 +1334,73 @@ void pathCounter::runOnStore(StoreInst *SI) {
 	assignTaint(P, V);
 }
 
+void pathCounter::markVariable(CallInst *CI){
+	enum symType markerType = UNDEFINED;	// see sym.h
+	if(ConstantInt *I = dyn_cast<ConstantInt>(CI->getArgOperand(0))){
+		if (I->getBitWidth() <= 64) {
+			markerType = (enum symType)I->getZExtValue();
+		}else{
+			std::cerr << "ERROR: Value GT 64 bit detected" << std::endl;
+		}
+	}
+	auto markedValue = CI->getArgOperand(1);
+	uint64_t markedTaintValue;	
+
+	if(TMap->find(markedValue) != TMap->end()){
+		markedTaintValue = (*TMap)[markedValue];
+	}else{
+		markedTaintValue = taintNo++;
+		(*TMap)[markedValue] = markedTaintValue;
+	}
+	markerTypeMap[markedValue] = markerType;
+
+	switch(markerType){
+		case INT:
+			std::cerr << "t" << (*TMap)[markedValue] << "=" << "MARK(INT)" << std::endl;
+			break;
+		case CONSTANT_STR:
+			std::cerr << "t" << (*TMap)[markedValue] << "=" << "MARK(CONSTANT_STR)" << std::endl;
+			break;
+		case VARIABLE_STR:
+			std::cerr << "t" << (*TMap)[markedValue] << "=" << "MARK(VARIABLE_STR)" << std::endl;
+			break;
+		case CONSTANT_INT_ARRAY:
+			std::cerr << "t" << (*TMap)[markedValue] << "=" << "MARK(CONSTANT_INT_ARRAY)" << std::endl;
+			break;
+		case CONSTANT_STRING_ARRAY:
+			std::cerr << "t" << (*TMap)[markedValue] << "=" << "MARK(CONSTANT_STRING_ARRAY)" << std::endl;
+			break;
+		case VARIABLE_INT_ARRAY:
+			std::cerr << "t" << (*TMap)[markedValue] << "=" << "MARK(VARIABLE_INT_ARRAY)" << std::endl;
+			break;
+		case VARIABLE_STRING_ARRAY:
+			std::cerr << "t" << (*TMap)[markedValue] << "=" << "MARK(VARIABLE_STRING_ARRAY)" << std::endl;
+			break;
+		default:
+			std::cerr << "ERROR! Unknown Mark TYPE!" << std::endl;
+			assert(0);	
+	}
+}
+
 void pathCounter::runOnCall(CallInst *CI) {
-	uint64_t constIntValue =0;
 	if(CI !=nullptr && CI->getCalledFunction() != nullptr && (CI->getCalledFunction()->hasName())){
-		//std::cerr << "FunCalled " << CI->getCalledFunction()->getName().data() << std::endl;
 		if(!strcmp(CI->getCalledFunction()->getName().data(), "_mark")){
-			if(ConstantInt *I = dyn_cast<ConstantInt>(CI->getArgOperand(0))){
-		 		if (I->getBitWidth() <= 64) {
-				    constIntValue = I->getZExtValue();
-  			 	}else{
-					std::cerr << "ERROR: Value GT 64 bit detected" << std::endl;
+			markVariable(CI);
+		}else{
+			// assign all arguments taint values
+			auto numArgs = CI->getNumArgOperands();
+			for(unsigned i = 0 ; i < numArgs ; i++){
+				auto argi = CI->getArgOperand(i);
+				auto taint_argi = getTaint(argi);
+				if(taint_argi == 0){
+					taint_argi = assignTaint(argi);
 				}
+				std::cerr << CI->getCalledFunction()->getName().data() << ".arg" << i << "=t" << taint_argi  << std::endl;
 			}
-			auto markedVariable = CI->getArgOperand(1);
-		
-			markerMap[markedVariable] = constIntValue;
-			(*TMap)[markedVariable] = taintNo++;
-	
-			std::cerr << " constaint Int Value " << constIntValue << std::endl;
+			// assign return value taints
+			auto retTaint = getTaint(CI);
+			assert(retTaint);
+			std::cerr << CI->getCalledFunction()->getName().data() << ".ret=t" << retTaint << std::endl;
 		}
 	}
 }
@@ -1394,40 +1436,37 @@ void pathCounter::runOnLoad(LoadInst *LI) {
 }
 
 
-void pathCounter::runOnReturn(BasicBlock *B, ReturnInst *RI) {
+void pathCounter::runOnReturn(ReturnInst *RI) {
+  	
   if (auto RV = RI->getReturnValue()) {
-    auto &IList = B->getInstList();
-    auto StoreFunc = CreateFunc(VoidTy, "__fslice_store_ret", "",
-                                IntPtrTy);
-    IList.insert(RI, CallInst::Create(StoreFunc, {LoadTaint(RI, RV)}));
-  }
-
-  // remove function name from call stack on return
-  auto &IList = B->getInstList();
-  auto PrintFunc = CreateFunc(VoidPtrTy, "__fslice_pop_from_call_stack","");
-  auto PR = CallInst::Create(PrintFunc);
-  IList.insert(RI, PR);
+	auto retTaint = getTaint(RV);
+	if(retTaint == 0){
+		retTaint = assignTaint(RV);
+	}
+	std::cerr << F->getName().data() << ".ret=t" << retTaint << std::endl;
+   }
 }
 
+void pathCounter::runOnCast(CastInst *I) {
+	auto operand = I->getOperand(0);
+	assignTaint(I, operand);
+}
 
-//void pathCounter::runOnUnary(BasicBlock *B, UnaryInstruction *I) {
-//	//auto Op = CreateString(I->getOpcodeName());	
-//	if(taintMap.find((uint64_t)I->getOperand(0)) == taintMap.end()){
-//		taintMap[(uint64_t)I->getOperand(0)] = taintVal++;
-//	}
-//	std::cerr  << B->getName().data() << " Unary Operand " << I->getOpcodeName() << " " << taintMap[(uint64_t)I->getOperand(0)] << std::endl;
-//}
-//
-//void pathCounter::runOnBinary(BasicBlock *B, BinaryOperator *I) {
-//	//auto Op = CreateString(I->getOpcodeName());	
-//	if(taintMap.find((uint64_t)I->getOperand(0)) == taintMap.end()){
-//		taintMap[(uint64_t)I->getOperand(0)] = taintVal++;
-//	}
-//	if(taintMap.find((uint64_t)I->getOperand(1)) == taintMap.end()){
-//		taintMap[(uint64_t)I->getOperand(1)] = taintVal++;
-//	}
-//	std::cerr  << B->getName().data()<< "Binary Operand " << I->getOpcodeName() << " Op1 = " << taintMap[(uint64_t)I->getOperand(0)] << " Op2 = " << taintMap[(uint64_t)I->getOperand(1)] << std::endl;
-//}
+void pathCounter::runOnBinary(BinaryOperator *I) {
+	auto operand0 = I->getOperand(0);
+	auto operand1 = I->getOperand(1);
+	auto t0 = getTaint(operand0);
+	if(t0 == 0){
+		t0 = assignTaint(operand0);
+	}
+	auto t1 = getTaint(operand1);
+	if(t1 == 0){
+		t1 = assignTaint(operand1);
+	}
+	auto instructionTaint = getTaint(I);
+	assert(instructionTaint);
+	std::cerr  <<  "t" << instructionTaint << "=("<< I->getOpcodeName() << ",t" << t0 << " , t" << t1 << ")" << std::endl;
+}
 
 void pathCounter::runOnICmp(ICmpInst *I) {
 	auto op1 = I->getOperand(0);
