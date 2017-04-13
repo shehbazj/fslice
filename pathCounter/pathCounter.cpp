@@ -613,28 +613,30 @@ const char* pathCounter :: isLoopBack(BasicBlock *BB)	// finds loopback in pathC
 	std::string s(pathContext);
         std::string funDelimiter(":");
         std::string bbDelimiter("-");
-        std::string bb;
-        while(std::count(s.begin(), s.end(), '-')>1){
-                std::cerr << "s = " << s << std::endl;
-                auto bbIndex = s.find(bbDelimiter);
-                auto funIndex = (s.find(funDelimiter) == std::string::npos) ? s.length() : s.find(funDelimiter);
-                std::cerr << "funIndex = " <<funIndex << " bbIndex = " << bbIndex << std::endl;
-                bb = s.substr(bbIndex + 1, funIndex - bbIndex -1);
-                if(!bb.compare(BBName)){
-			s = s.substr(funIndex + 1, s.length());
-                        bbIndex = s.find(bbDelimiter);
-                        funIndex = s.find(funDelimiter);
-			auto nextBB = s.substr(bbIndex + 1, funIndex - bbIndex - 1); 
-                	return nextBB.c_str();
-                }else{  
-                        std::cerr << "bb=" << bb << " BBName" << BBName << std::endl;
-                }
-                if(s.find(funDelimiter) != std::string::npos){
-                        s= s.substr(funIndex+1, s.length());
-                }else{  
-                        s.clear();
-                }
-        }
+
+	std::vector <std::string > V;
+	std::string var;
+	std::cerr << "s is " << s << std::endl;
+	for(unsigned i = 0 ; i < s.size() ; i++){
+		if(s[i] == ':'){
+			V.push_back(var);
+			var.clear();
+		}else{
+			var += s[i];
+		}
+	}
+	std::cerr << "V size is " << V.size() << std::endl;
+
+	if(V.size() == 0)
+		return nullptr;
+	for(unsigned i = 0 ; i < V.size() -1 ; i++){
+		std::cerr << V[i] << std::endl;
+		if(V[i].find(BBName) != std::string::npos){
+			std::cout << "next tuple = " << V[i+1] << std::endl;
+			std::cout << "next bb = " << V[i+1].substr(V[i+1].find('-') +1, V[i+1].length()) << std::endl;
+			return V[i+1].substr(V[i+1].find('-') + 1, V[i+1].length()).c_str();
+		}
+	}
 	return nullptr;
 }
 
@@ -1259,9 +1261,9 @@ bool pathCounter::isSolvable()
 bool pathCounter::isSolvable(BasicBlock *nextBB)
 {
 	std::string oldPathContext(pathContext);
-	pathContext += "-";
-	pathContext += nextBB->getParent()->getName().data();
 	pathContext += ":";
+	pathContext += nextBB->getParent()->getName().data();
+	pathContext += "-";
 	pathContext += nextBB->getName().data();
 	bool result = isSolvable();
 	pathContext.clear();
@@ -1280,9 +1282,9 @@ void pathCounter :: updatePathContext(BasicBlock *currentBB){
 void pathCounter:: saveContext (BasicBlock *currentBB, std::map<std::string, unsigned > *GbbMap){
 	std::cerr << __func__ << "():current BB is " << currentBB->getName().data() << std::endl;
 	auto currentBBPP = queryPP(currentBB, GbbMap);
-	auto pathToSave = pathContext + "-";
+	auto pathToSave = pathContext + ":";
 	pathToSave += currentBB->getParent()->getName().data();
-	pathToSave += ":";
+	pathToSave += "-";
 	pathToSave += currentBB->getName().data();
 	D(std::cerr << __func__ << "():saved path " << pathToSave << " path Potential " << currentBBPP << std::endl;)
 	pathPotentialTuple p(pathToSave,currentBBPP);
@@ -1292,7 +1294,9 @@ void pathCounter:: saveContext (BasicBlock *currentBB, std::map<std::string, uns
 // return child BB with minimum PP
 BasicBlock* pathCounter:: getAlternateBB(BasicBlock *parentBB, const char *loopBackBlock){
 	for(unsigned i = 0 ; i < parentBB->getTerminator()->getNumSuccessors(); i++){
-		if(strcmp(loopBackBlock,parentBB->getTerminator()->getSuccessor(i)->getName().data())){
+		std::cerr <<__func__ << "loopBack Block " << loopBackBlock << 
+	" compared block = " << parentBB->getTerminator()->getSuccessor(i)->getName().data() << std::endl;
+		if(strcmp(loopBackBlock,parentBB->getTerminator()->getSuccessor(i)->getName().data()) != 0){
 			return parentBB->getTerminator()->getSuccessor(i);
 		}
 	}
@@ -1387,8 +1391,8 @@ BasicBlock* pathCounter :: loadContext()
 		pathContext = nextContext.path;
 		// context saved as f1:bb1-f1:bb2-f2:bb1
 	
-		std::string bbDelimiter = "-";
-	        std::string funDelimiter = ":";
+		std::string bbDelimiter = ":";
+	        std::string funDelimiter = "-";
 	        int lastIndex;
 	        std::string lastBB(pathContext);
 	        while(lastBB.find(bbDelimiter)!=std::string::npos){
