@@ -38,6 +38,27 @@ struct Taint {
   bool is_obj:1;	// S.J. Is true for objects allocated on heap
 } __attribute__((packed));
 
+/* linkBranch and linComparator structures are used to keep track of immediately previous
+ * branch condition {next basic blocks} and comparator instruction {comparator, operand1 , operand2} 
+ * that were processed while going through a path context. before going to any basic block
+ * that is preceeded by a conditional statement, we store the comparator in linkComparator
+ * data structure. the different basic blocks that one can go to due to this comparator 
+ * evaluation is stored in linkBranch structure.
+ * */
+
+struct Branch {
+	uint64_t taint;
+	std::string b1;
+	std::string b2;
+}linkBranch;
+
+struct Comparator {
+	uint64_t taint;
+	std::string sign;
+	uint64_t t1;
+	uint64_t t2;
+} linkComparator;
+
 std::map<int , const char *> Predicate {
   // Opcode        
 {   0, "FCMP_FALSE"}, 
@@ -138,6 +159,7 @@ uint64_t  LoadStoreSize(const DataLayout *DL, Value *P);
   bool hasFunctionCall(BasicBlock *BB);
   void runOnBinary(BinaryOperator *I);
 	void runOnICmp(ICmpInst *I);
+	void runOnAlloca(AllocaInst *I);
   void getFunctionPPWithoutCalls();
 	void cleanup();
 	void taintBasicBlocks(Module *M);
@@ -207,6 +229,8 @@ uint64_t  LoadStoreSize(const DataLayout *DL, Value *P);
 	// for each BB in that function.
 	std::map <const char *, void *> functionConvergenceFactorMap;
 	void taintInstructions();
+	void taintInstructions(BasicBlock *BB);
+	void printMarkedInstructions(BasicBlock *BB);
 
 	void calculateLoopFactor(Module *M);
 	void detectLoop(BasicBlock *currentBB, std::stack<BasicBlock *> *bbStack);
@@ -292,13 +316,90 @@ uint64_t assignTaint(Value *Val);
 	std::vector <std::string > * parseBBString(std::string s);
 	std::tuple <BasicBlock *, uint64_t> getNextBB(std::string *bbString);
 	bool solve();
+// z3
+	bool linkComparatorIsEmpty();
+	void clearLinkComparator();
+	bool linkBranchIsEmpty();
+	void clearLinkBranch();
+	std::string  getSign(std::string pred);
+	void  initializeLinkComparator(uint64_t iTaint, std::string pred, uint64_t t1, uint64_t t2);
+	void derivePreviousCondition(BasicBlock *BB);
 };
 
-void pathCounter:: __fslice_store (uint64_t size, Value * addr , Value* taint) { 
-					
-	return;
+/* derivePreviousCondition(BasicBlock *BB)
+ * while traversing a basic block, we evaluate if its predecessor was a conditional block. If yes,
+ * we obtain the comparision instruction that evaluated to either true or false to reach the current
+ * Basic Block BB.
+ * */
+
+void pathCounter :: derivePreviousCondition(BasicBlock *BB)
+{
+	auto basicBlockName = BB->getName().data();
+	bool comparator;
+	if(linkBranchIsEmpty())
+		return;
+	else{
+		// if current block was first basic block in previous branch
+		// condition, comparator is True, else it is False
+		// s.add( t2 < t17)
+		comparator = !strcmp(basicBlockName, linkBranch.b1.c_str());
+		if(comparator){
+			std::cerr << "s.add( t" << linkComparator.t1 << linkComparator.sign 
+						<< " t"<< linkComparator.t2 << " )"<< std::endl;			
+		}else{
+			std::cerr << "s.add(( t"<< linkComparator.t1 << linkComparator.sign << " t"<< linkComparator.t2 
+				<< ") == False )"<< std::endl;
+		}
+		clearLinkBranch();
+		clearLinkComparator();
+	}
 }
 
+bool pathCounter :: linkComparatorIsEmpty()
+{
+	return (linkComparator.taint == 0);
+}
+
+bool pathCounter :: linkBranchIsEmpty()
+{
+	return (linkBranch.taint == 0);
+}
+
+void pathCounter :: clearLinkComparator()
+{
+	linkComparator.taint = 0;
+	linkComparator.sign.clear();
+	linkComparator.t1 = 0;
+	linkComparator.t2 = 0;
+}
+
+void pathCounter :: clearLinkBranch()
+{
+	linkBranch.taint = 0;
+	linkBranch.b1.clear();
+	linkBranch.b2.clear();
+}
+
+std::string  pathCounter :: getSign(std::string pred){
+	if(!pred.compare("FCMP_FALSE")){
+		return std::string (" != ");
+	}else if(!pred.compare("ICMP_ULT")){
+		return std::string (" < ");
+	}else{
+		std::cerr << "TODO ADD CONDITION FOR PRED " << pred << std::endl;
+		assert(0);
+	}
+}
+
+//bool pathCounter :: linkComparatorIsEmpty()
+//std::string pathCounter :: getSign(std::string pred){
+void pathCounter:: initializeLinkComparator(uint64_t iTaint, std::string pred, uint64_t t1, uint64_t t2)
+{
+	linkComparator.taint = iTaint;
+	linkComparator.t1 = t1;
+	linkComparator.t2 = t2;
+	linkComparator.sign = getSign(pred);
+}
 
 pathCounter::pathCounter(void)
     : ModulePass(ID),
@@ -1052,7 +1153,7 @@ uint64_t pathCounter::assignTaint(Value *V)
 			integer = CI->getZExtValue();
 			if(CMap->find(integer) == CMap->end()){
 				//std::cerr << __func__ << "():Assigning int constant " << integer << " taint value " << taintNo << std::endl;
-				std::cerr << "t" << taintNo << "=V(" << integer << ")" << std::endl;
+				std::cerr << "t" << taintNo << " = " << integer << std::endl;
 				(*CMap)[integer] = taintNo++;
 			}
 			D(std::cerr << "integer value " << integer << " has taint " << (*CMap)[integer];)
@@ -1065,7 +1166,7 @@ uint64_t pathCounter::assignTaint(Value *V)
 	if(TMap->find(V) == TMap->end()){
 		D(std::cerr << __func__ << "():Assigning new taint value " << taintNo << std::endl;)
 		(*TMap)[V]=taintNo++;
-	}	
+	}
 	return (*TMap)[V];	
 }
 
@@ -1076,7 +1177,7 @@ void pathCounter::assignTaint(Value *Dest, Value *Src)
 		srcTaint = assignTaint(Src);
 	}
 	D(std::cerr << __func__ << "():assigning taint of source " << srcTaint << std::endl;)
-	std::cerr << "t" << (*TMap)[Dest] << "=t" << srcTaint << std::endl;
+	std::cerr << "t" << (*TMap)[Dest] << " = t" << srcTaint << std::endl;
 	(*TMap)[Dest] = srcTaint;
 }
 
@@ -1098,6 +1199,21 @@ void pathCounter::taintInstructions()
 	//		in function " << F->getName().data() << " total Taint Count " << taintNo-1 << std::endl;
 }
 
+void pathCounter::taintInstructions(BasicBlock *B)
+{
+	for (auto &I : *B) {
+		if(TMap->find(&I) == TMap->end()){
+			(*TMap)[&I] =taintNo++;
+		}	
+		if(CallInst *CI = dyn_cast<CallInst>(&I)) {
+			if(!strcmp(CI->getCalledFunction()->getName().data(),"_mark")){
+				std::cerr << "t" << (*TMap)[&I] 
+					<< "=t" << (*TMap)[CI->getOperand(1)] << std::endl;
+			}
+		}	
+	}
+}
+
 void pathCounter::runOnArgs(void) {
 	for (auto &A : F->args()){
 		uint64_t TA = getTaint(&A);
@@ -1109,6 +1225,10 @@ void pathCounter::runOnArgs(void) {
 
 void pathCounter:: runOnInstructions(BasicBlock *B)
 {
+	printMarkedInstructions(B);
+	taintInstructions(B);
+	// taintArguments();	
+	derivePreviousCondition(B);
 	for (auto I = B->begin(); I != B->end() ; I++) {
 		if (LoadInst *LI = dyn_cast<LoadInst>(I)) {
 			runOnLoad(LI); 
@@ -1120,15 +1240,16 @@ void pathCounter:: runOnInstructions(BasicBlock *B)
 			runOnIntrinsic(MI);
 		}*/ else if (CallInst *CI = dyn_cast<CallInst>(I)) {
 			runOnCall(CI);
-		} else if (ReturnInst *RI = dyn_cast<ReturnInst>(I)) {
+		} /*else if (ReturnInst *RI = dyn_cast<ReturnInst>(I)) {
 			runOnReturn(RI);
-		} else if (CastInst *CI = dyn_cast<CastInst>(I)) {
+		}*/ else if (CastInst *CI = dyn_cast<CastInst>(I)) {
 			runOnCast(CI);
 		} else if (BinaryOperator *BI = dyn_cast<BinaryOperator>(I)) {
 			runOnBinary(BI);
-		}
-		else if (ICmpInst *IC = dyn_cast<ICmpInst>(I)) {
+		} else if (ICmpInst *IC = dyn_cast<ICmpInst>(I)) {
 			runOnICmp(IC);
+		} else if (AllocaInst *AI = dyn_cast<AllocaInst>(I)) {
+			runOnAlloca(AI);
 		}
 	}
 }
@@ -1240,10 +1361,25 @@ void pathCounter::detectLoop(BasicBlock *currentBB, std::stack<BasicBlock *> *bb
 bool pathCounter::hasFunctionCall(BasicBlock *BB)
 {
 	for(auto &I : *BB){
-		if(dyn_cast<CallInst>(&I))
-			return true;
+		if(CallInst *CI = dyn_cast<CallInst>(&I)){
+			if(strcmp(CI->getCalledFunction()->getName().data(), "_mark")){
+				std::cerr << "called function " << CI->getCalledFunction()->getName().data() << std::endl ;
+				return true;
+			}	
+		}
 	}
 	return false;
+}
+
+void pathCounter::printMarkedInstructions(BasicBlock *BB)
+{
+	for(auto &I : *BB){
+		if(CallInst *CI = dyn_cast<CallInst>(&I)){
+			if(!strcmp(CI->getCalledFunction()->getName().data(), "_mark")){
+				markVariable(CI);
+			}	
+		}
+	}
 }
 
 uint64_t pathCounter :: queryPP(BasicBlock *BB, std::map<std::string, unsigned> *GbbMap)
@@ -1301,7 +1437,7 @@ bool pathCounter :: solve()
 	while(!bbString.empty()){
 		auto x = getNextBB(&bbString);
 		runOnInstructions(std::get<0>(x));
-		std::cerr << __func__ << "():"<< std::get<0>(x) ->getName().data() << std::endl;
+		//std::cerr << __func__ << "():"<< std::get<0>(x) ->getName().data() << std::endl;
 	}
 	return true;
 }
@@ -1310,7 +1446,7 @@ bool pathCounter::isSolvable()
 {
 	assert(!pathContext.empty());
 	D(std::cerr << __func__ << "():"<< pathContext << std::endl;)
-	return solve();
+	return true; 
 }
 
 bool pathCounter::isSolvable(BasicBlock *nextBB)
@@ -1429,8 +1565,20 @@ BasicBlock* pathCounter::getNextMaxBB(BasicBlock *currentBB, std::map<std::strin
 
 void pathCounter :: getModel()
 {
-	std::cerr << ">>>:::GETMODEL:::<<<" << std::endl;
-	isSolvable();
+	std::cerr << "#>>>:::GETMODEL:::<<<" << std::endl;
+	std::cerr << "from z3 import *" << std::endl;
+	std::cerr << "s=Solver()" << std::endl;
+
+	TMap = new std::map<Value *, uint64_t>;
+	CMap = new std::map<uint64_t , uint64_t>;
+	taintNo = 1;
+	if(TMap == nullptr)
+		std::cerr << __func__ << "null value allocated" << std::endl;
+
+	solve();
+	std::cerr << "x=s.check()\nif(str(x) == \"sat\"):\n\tprint s.model()\nelse:\n\tprint str(x)" << std::endl;
+	delete TMap;
+	delete CMap;
 }
 
 BasicBlock* pathCounter :: loadContext()
@@ -1522,15 +1670,15 @@ void pathCounter :: initializeVariables(Module &M_)
         IntPtrTy = Type::getIntNTy(*C,  DL->getPointerSizeInBits());
         VoidTy = Type::getVoidTy(*C);
         VoidPtrTy = PointerType::getUnqual(IntegerType::getInt8Ty(*C));
+	taintNo = 1;
 }
 
 
 bool pathCounter::runOnModule(Module &M_) {
-	CMap = new std::map<uint64_t , uint64_t>;
 	std::map< std::string, unsigned> GbbMap;
 	initializeVariables(M_);
 	// instrument the code for tainting
-	taintBasicBlocks(&M_);
+	//taintBasicBlocks(&M_);
 	
 	// get different possible paths from each basic block.
 	getModuleLevelPP(&GbbMap);
@@ -1541,10 +1689,10 @@ bool pathCounter::runOnModule(Module &M_) {
 	BBLocal = &(mainF->getEntryBlock());
 	pathContext += "main-entry";
 	std::cerr<< "START ENUMERATION" << std::endl;
+	std::cerr << "taintNo = " << taintNo << std:: endl;
 	enumeratePaths(&GbbMap, BBLocal);
 		
 //	// process path constraints and get input values
-
 //	// cleanup
         return true;
 }
@@ -1691,6 +1839,14 @@ Value *pathCounter::LoadTaint(Instruction *I, Value *V) {
 	return nullptr;
 }
 
+void pathCounter::runOnLoad(LoadInst *LI) {
+	// eg. %0 = load *x
+	// get taint of pointer, get taint of LI instruction
+	// assign pointer taint to LI instruction
+	auto P = LI->getPointerOperand();
+	assignTaint(LI, P);
+}
+
 // Instrument a single instruction.
 void pathCounter::runOnStore(StoreInst *SI) {
 	// store taint of Value, to taint of PointerAddress
@@ -1724,7 +1880,7 @@ void pathCounter::markVariable(CallInst *CI){
 
 	switch(markerType){
 		case INT:
-			std::cerr << "t" << (*TMap)[markedValue] << "=" << "MARK(INT)" << std::endl;
+			std::cerr << "t" << (*TMap)[markedValue] << "=" << "Int('t" << (*TMap)[markedValue] <<"')" << std::endl;
 			break;
 		case CONSTANT_STR:
 			std::cerr << "t" << (*TMap)[markedValue] << "=" << "MARK(CONSTANT_STR)" << std::endl;
@@ -1753,7 +1909,10 @@ void pathCounter::markVariable(CallInst *CI){
 void pathCounter::runOnCall(CallInst *CI) {
 	if(CI !=nullptr && CI->getCalledFunction() != nullptr && (CI->getCalledFunction()->hasName())){
 		if(!strcmp(CI->getCalledFunction()->getName().data(), "_mark")){
-			markVariable(CI);
+			// no action, marking is done prior to reaching a basic Block when it is analyzed for
+			// any function calls
+			//markVariable(CI);
+			;
 		}else{
 			// assign all arguments taint values
 			auto numArgs = CI->getNumArgOperands();
@@ -1774,35 +1933,30 @@ void pathCounter::runOnCall(CallInst *CI) {
 }
 
 void pathCounter::runOnBranch(BranchInst *BI) {
-	int numSuccessors = BI->getNumSuccessors();
+	//int numSuccessors = BI->getNumSuccessors();
 	if(BI->isConditional()){
 		auto cond = BI->getCondition();
 		auto condTaint = getTaint(cond);
 		if(condTaint == 0){
 			condTaint = assignTaint(cond);
 		}
-		std::cerr << "BRANCH_COND " << " " << "t" << condTaint << " ( " ;
-		for(auto i = 0; i < numSuccessors ; i++){
-			auto bbName = BI->getSuccessor(i)->getName().data();
-			std::cerr << bbName << " ";
-		}
-		std::cerr << ")" << std::endl;
-	}else{
-		std::cerr << "BRANCH_UNCOND " << " " ;
-		for(auto i = 0 ; i < numSuccessors ; i++)
-			std::cerr << BI->getSuccessor(i) -> getName().data() << " ";
-		std::cerr << std::endl;
+		//std::cerr << "BRANCH_COND " << " " << "t" << condTaint << " ( " ;
+		assert(linkBranchIsEmpty());
+		linkBranch.taint = condTaint;
+		linkBranch.b1.assign(BI->getSuccessor(0)->getName().data());
+		linkBranch.b2.assign(BI->getSuccessor(1)->getName().data());
+	//	for(auto i = 0; i < numSuccessors ; i++){
+	//		auto bbName = BI->getSuccessor(i)->getName().data();
+	//		std::cerr << bbName << " ";
+	//	}
+	//	std::cerr << ")" << std::endl;
+	//}else{
+	//	std::cerr << "BRANCH_UNCOND " << " " ;
+	//	for(auto i = 0 ; i < numSuccessors ; i++)
+	//		std::cerr << BI->getSuccessor(i) -> getName().data() << " ";
+	//	std::cerr << std::endl;
 	}
 }
-
-void pathCounter::runOnLoad(LoadInst *LI) {
-	// eg. %0 = load *x
-	// get taint of pointer, get taint of LI instruction
-	// assign pointer taint to LI instruction
-	auto P = LI->getPointerOperand();
-	assignTaint(LI, P);
-}
-
 
 void pathCounter::runOnReturn(ReturnInst *RI) {
   	
@@ -1836,6 +1990,12 @@ void pathCounter::runOnBinary(BinaryOperator *I) {
 	std::cerr  <<  "t" << instructionTaint << "=("<< I->getOpcodeName() << ",t" << t0 << " , t" << t1 << ")" << std::endl;
 }
 
+void pathCounter::runOnAlloca(AllocaInst *I) {
+	assert(TMap->find(I) != TMap->end());
+	auto tnum = (*TMap)[I];
+	std::cerr << "t" << tnum << " = 0" << std::endl; 
+}
+
 void pathCounter::runOnICmp(ICmpInst *I) {
 	auto op1 = I->getOperand(0);
 	auto op2 = I->getOperand(1);
@@ -1848,8 +2008,12 @@ void pathCounter::runOnICmp(ICmpInst *I) {
 	if(t2 == 0)
 		t2 = assignTaint(op2);
 	auto iTaint = getTaint(I);
+
+	// should not overwrite existing comparision instruction
+	assert(linkComparatorIsEmpty());
+	initializeLinkComparator(iTaint, Predicate[Pred], t1, t2);
 				
-	std::cerr << "t" << iTaint << "=(" << Predicate[Pred] << ",t" << t1 << ",t" << t2 << ")" << std::endl;
+	//std::cerr << "t" << iTaint << "=(" << Predicate[Pred] << ",t" << t1 << ",t" << t2 << ")" << std::endl;
 }
 
 //
