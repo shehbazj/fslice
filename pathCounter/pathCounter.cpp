@@ -322,6 +322,7 @@ uint64_t assignTaint(Value *Val);
 	bool linkBranchIsEmpty();
 	void clearLinkBranch();
 	std::string  getSign(std::string pred);
+	std::string  getSymbol(std::string pred);
 	void  initializeLinkComparator(uint64_t iTaint, std::string pred, uint64_t t1, uint64_t t2);
 	void derivePreviousCondition(BasicBlock *BB);
 };
@@ -380,11 +381,26 @@ void pathCounter :: clearLinkBranch()
 	linkBranch.b2.clear();
 }
 
+std::string pathCounter :: getSymbol(std::string opCode){
+	if(!opCode.compare("add")){
+		return std::string (" + ");
+	}else if(!opCode.compare("sub")){
+		return std::string (" - ");
+	}else{
+		std::cerr << "TODO ADD CONDITION FOR PRED" << opCode << std::endl;
+		assert(0);
+	}
+}
+
+/* returns mathematical sign equavalent of the LLVM Compare string */
+
 std::string  pathCounter :: getSign(std::string pred){
 	if(!pred.compare("FCMP_FALSE")){
 		return std::string (" != ");
 	}else if(!pred.compare("ICMP_ULT")){
 		return std::string (" < ");
+	}else if(!pred.compare("ICMP_EQ")){
+		return std::string (" == ");
 	}else{
 		std::cerr << "TODO ADD CONDITION FOR PRED " << pred << std::endl;
 		assert(0);
@@ -1133,7 +1149,7 @@ void pathCounter::evaluatePath(std::map< std::string, unsigned> *GbbMap, std::st
 void pathCounter::runOnFunction()
 {
 	taintInstructions();
-	runOnArgs();
+	//runOnArgs();
 /*
 	std::cerr << F->getName().data() << std::endl;
 	BBLocal = &(F->getEntryBlock());
@@ -1206,9 +1222,10 @@ void pathCounter::taintInstructions(BasicBlock *B)
 			(*TMap)[&I] =taintNo++;
 		}	
 		if(CallInst *CI = dyn_cast<CallInst>(&I)) {
-			if(!strcmp(CI->getCalledFunction()->getName().data(),"_mark")){
+			std::string callFunctionName(CI->getCalledFunction()->getName().data());
+			if(callFunctionName.find("_mark") != std::string::npos){
 				std::cerr << "t" << (*TMap)[&I] 
-					<< "=t" << (*TMap)[CI->getOperand(1)] << std::endl;
+					<< "=t" << (*TMap)[CI->getOperand(0)] << std::endl;
 			}
 		}	
 	}
@@ -1241,7 +1258,7 @@ void pathCounter:: runOnInstructions(BasicBlock *B)
 		}*/ else if (CallInst *CI = dyn_cast<CallInst>(I)) {
 			runOnCall(CI);
 		} /*else if (ReturnInst *RI = dyn_cast<ReturnInst>(I)) {
-			runOnReturn(RI);
+			//runOnReturn(RI);
 		}*/ else if (CastInst *CI = dyn_cast<CastInst>(I)) {
 			runOnCast(CI);
 		} else if (BinaryOperator *BI = dyn_cast<BinaryOperator>(I)) {
@@ -1362,8 +1379,8 @@ bool pathCounter::hasFunctionCall(BasicBlock *BB)
 {
 	for(auto &I : *BB){
 		if(CallInst *CI = dyn_cast<CallInst>(&I)){
-			if(strcmp(CI->getCalledFunction()->getName().data(), "_mark")){
-				std::cerr << "called function " << CI->getCalledFunction()->getName().data() << std::endl ;
+			std::string callFunctionName(CI->getCalledFunction()->getName().data());
+			if(callFunctionName.find("_mark") == std::string::npos){
 				return true;
 			}	
 		}
@@ -1375,9 +1392,10 @@ void pathCounter::printMarkedInstructions(BasicBlock *BB)
 {
 	for(auto &I : *BB){
 		if(CallInst *CI = dyn_cast<CallInst>(&I)){
-			if(!strcmp(CI->getCalledFunction()->getName().data(), "_mark")){
+			std::string callFunctionName(CI->getCalledFunction()->getName().data());
+			if(callFunctionName.find("_mark") != std::string::npos){
 				markVariable(CI);
-			}	
+			}
 		}
 	}
 }
@@ -1434,6 +1452,7 @@ std::tuple <BasicBlock *, uint64_t> pathCounter:: getNextBB(std::string *bbStrin
 bool pathCounter :: solve()
 {
 	std::string bbString(pathContext);
+	D(std::cerr << __func__ << "():PATH CONTEXT " << pathContext << std::endl;)
 	while(!bbString.empty()){
 		auto x = getNextBB(&bbString);
 		runOnInstructions(std::get<0>(x));
@@ -1512,7 +1531,7 @@ BasicBlock* pathCounter::getNextMaxBB(BasicBlock *currentBB, std::map<std::strin
 
 	const char* alternateBBName = isLoopBack(currentBB);
 	if(alternateBBName != nullptr){
-		std::cerr << __func__ << "(): LOOP DETECTED " << std::endl;
+		D(std::cerr << __func__ << "(): LOOP DETECTED " << std::endl;)
 		D(std::cerr << __func__ << "(): return block with less PP " << std::endl;)
 		auto alternateBB = getAlternateBB(currentBB, alternateBBName);
 		D(std::cerr << __func__ << "(): block returned " << alternateBB->getName().data() << std::endl;)
@@ -1637,7 +1656,8 @@ void pathCounter::enumeratePaths(std::map<std::string, unsigned > *GbbMap, Basic
 			getModel(); // reach terminal block GENERATE TESTCASE
 			currentBB = loadContext();
 			if(currentBB == nullptr){
-				std::cerr << "TESTING COMPLETE" << std::endl;
+				std::cerr << "#GETMODEL" << std::endl;
+				std::cerr << "#TESTING COMPLETE" << std::endl;
 				return;
 			}else{		// Scheduler has unexplored paths in Queue
 				D(std::cerr << __func__ << "():new context loaded " << pathContext << std::endl;
@@ -1859,15 +1879,17 @@ void pathCounter::runOnStore(StoreInst *SI) {
 }
 
 void pathCounter::markVariable(CallInst *CI){
-	enum symType markerType = UNDEFINED;	// see sym.h
-	if(ConstantInt *I = dyn_cast<ConstantInt>(CI->getArgOperand(0))){
-		if (I->getBitWidth() <= 64) {
-			markerType = (enum symType)I->getZExtValue();
-		}else{
-			std::cerr << "ERROR: Value GT 64 bit detected" << std::endl;
-		}
-	}
-	auto markedValue = CI->getArgOperand(1);
+//	enum symType markerType = UNDEFINED;	// see sym.h
+//	if(ConstantInt *I = dyn_cast<ConstantInt>(CI->getArgOperand(0))){
+//		if (I->getBitWidth() <= 64) {
+//			markerType = (enum symType)I->getZExtValue();
+//		}else{
+//			std::cerr << "ERROR: Value GT 64 bit detected" << std::endl;
+//		}
+//	}
+	int markerType = 0;	
+
+	auto markedValue = CI->getArgOperand(0);
 	uint64_t markedTaintValue;	
 
 	if(TMap->find(markedValue) != TMap->end()){
@@ -1876,39 +1898,63 @@ void pathCounter::markVariable(CallInst *CI){
 		markedTaintValue = taintNo++;
 		(*TMap)[markedValue] = markedTaintValue;
 	}
+	std::string calledFunctionName(CI->getCalledFunction()->getName().data());
+	if(!calledFunctionName.compare("_mark_int")){
+		std::cerr << "t" << (*TMap)[markedValue] << "=" << "Int('t" << (*TMap)[markedValue] <<"')" << std::endl;
+		markerType = 1;			
+	} else if(!calledFunctionName.compare("_mark_char")){
+			std::cerr << "t" << (*TMap)[markedValue] << "=" << "Char('t" << (*TMap)[markedValue] << "')" << std::endl;
+		markerType = 2;
+	} else if(!calledFunctionName.compare("_mark_var_str_arr")){
+			std::cerr << "t" << (*TMap)[markedValue] << "=" << "Array('t" << (*TMap)[markedValue] << "')" << std::endl;
+		markerType = 8;
+	} else {
+		std::cerr << "TODO: add type for " << calledFunctionName << "(): function "<< std::endl;
+		assert(0);
+	}
+//
+//extern char _mark_char( char addr);
+//extern char _mark_var_str( char* addr);
+//extern char _mark_const_str( char* addr, int len);
+//extern char _mark_var_str_arr( char **addr);
+//extern char _mark_var_int_arr( int **addr );
+//extern char _mark_const_int_arr( int **addr , int len);
+//extern char _mark_const_str_arr( char **addr, int len);
+
 	markerTypeMap[markedValue] = markerType;
 
-	switch(markerType){
-		case INT:
-			std::cerr << "t" << (*TMap)[markedValue] << "=" << "Int('t" << (*TMap)[markedValue] <<"')" << std::endl;
-			break;
-		case CONSTANT_STR:
-			std::cerr << "t" << (*TMap)[markedValue] << "=" << "MARK(CONSTANT_STR)" << std::endl;
-			break;
-		case VARIABLE_STR:
-			std::cerr << "t" << (*TMap)[markedValue] << "=" << "MARK(VARIABLE_STR)" << std::endl;
-			break;
-		case CONSTANT_INT_ARRAY:
-			std::cerr << "t" << (*TMap)[markedValue] << "=" << "MARK(CONSTANT_INT_ARRAY)" << std::endl;
-			break;
-		case CONSTANT_STRING_ARRAY:
-			std::cerr << "t" << (*TMap)[markedValue] << "=" << "MARK(CONSTANT_STRING_ARRAY)" << std::endl;
-			break;
-		case VARIABLE_INT_ARRAY:
-			std::cerr << "t" << (*TMap)[markedValue] << "=" << "MARK(VARIABLE_INT_ARRAY)" << std::endl;
-			break;
-		case VARIABLE_STRING_ARRAY:
-			std::cerr << "t" << (*TMap)[markedValue] << "=" << "MARK(VARIABLE_STRING_ARRAY)" << std::endl;
-			break;
-		default:
-			std::cerr << "ERROR! Unknown Mark TYPE!" << std::endl;
-			assert(0);	
-	}
+//	switch(markerType){
+//		case INT:
+//			std::cerr << "t" << (*TMap)[markedValue] << "=" << "Int('t" << (*TMap)[markedValue] <<"')" << std::endl;
+//			break;
+//		case CONSTANT_STR:
+//			std::cerr << "t" << (*TMap)[markedValue] << "=" << "MARK(CONSTANT_STR)" << std::endl;
+//			break;
+//		case VARIABLE_STR:
+//			std::cerr << "t" << (*TMap)[markedValue] << "=" << "MARK(VARIABLE_STR)" << std::endl;
+//			break;
+//		case CONSTANT_INT_ARRAY:
+//			std::cerr << "t" << (*TMap)[markedValue] << "=" << "MARK(CONSTANT_INT_ARRAY)" << std::endl;
+//			break;
+//		case CONSTANT_STRING_ARRAY:
+//			std::cerr << "t" << (*TMap)[markedValue] << "=" << "MARK(CONSTANT_STRING_ARRAY)" << std::endl;
+//			break;
+//		case VARIABLE_INT_ARRAY:
+//			std::cerr << "t" << (*TMap)[markedValue] << "=" << "MARK(VARIABLE_INT_ARRAY)" << std::endl;
+//			break;
+//		case VARIABLE_STRING_ARRAY:
+//			std::cerr << "t" << (*TMap)[markedValue] << "=" << "MARK(VARIABLE_STRING_ARRAY)" << std::endl;
+//			break;
+//		default:
+//			std::cerr << "ERROR! Unknown Mark TYPE!" << std::endl;
+//			assert(0);	
+//	}
 }
 
 void pathCounter::runOnCall(CallInst *CI) {
 	if(CI !=nullptr && CI->getCalledFunction() != nullptr && (CI->getCalledFunction()->hasName())){
-		if(!strcmp(CI->getCalledFunction()->getName().data(), "_mark")){
+		std::string callFunctionName(CI->getCalledFunction()->getName().data());
+		if(callFunctionName.find("_mark") != std::string::npos){
 			// no action, marking is done prior to reaching a basic Block when it is analyzed for
 			// any function calls
 			//markVariable(CI);
@@ -1987,7 +2033,8 @@ void pathCounter::runOnBinary(BinaryOperator *I) {
 	}
 	auto instructionTaint = getTaint(I);
 	assert(instructionTaint);
-	std::cerr  <<  "t" << instructionTaint << "=("<< I->getOpcodeName() << ",t" << t0 << " , t" << t1 << ")" << std::endl;
+	//std::cerr  <<  "t" << instructionTaint << "=("<< I->getOpcodeName() << ",t" << t0 << " , t" << t1 << ")" << std::endl;
+	std::cerr  <<  "t" << instructionTaint << " = t" << t0  << getSymbol(I->getOpcodeName())  << " t" << t1 << std::endl;
 }
 
 void pathCounter::runOnAlloca(AllocaInst *I) {
