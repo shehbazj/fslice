@@ -160,6 +160,7 @@ uint64_t  LoadStoreSize(const DataLayout *DL, Value *P);
   void runOnBinary(BinaryOperator *I);
 	void runOnICmp(ICmpInst *I);
 	void runOnAlloca(AllocaInst *I);
+	void runOnGetElementPtr(GetElementPtrInst *I);
   void getFunctionPPWithoutCalls();
 	void cleanup();
 	void taintBasicBlocks(Module *M);
@@ -193,6 +194,7 @@ uint64_t  LoadStoreSize(const DataLayout *DL, Value *P);
 
 	void trackLoad(Value *I);
 	void printMap();
+	unsigned getConstant(Value *op);
 	template <typename T>
 	bool isLoopBack(T *currentBB, std::stack <T *> *bbStack);
 	const char * isLoopBack(BasicBlock * currentBB);
@@ -439,6 +441,22 @@ void pathCounter :: printMap()
 		}
 		std::cerr << std::endl;
 	}	
+}
+
+unsigned pathCounter :: getConstant(Value *op)
+{
+	if (ConstantInt *CI = dyn_cast<ConstantInt>(op)){
+		if(CI->getBitWidth() <=64){
+			auto integer1 = CI->getZExtValue();
+			return integer1;
+		}else{
+			std::cerr << "Found const value with size > 64" << std::endl;
+			assert(0);
+		}
+	}else{
+		std::cerr << "NOT CONSTANT" << std::endl;
+		assert(0);
+	}
 }
 
 void pathCounter :: printFunCallFromBB(const char *bbName)
@@ -1192,7 +1210,18 @@ void pathCounter::assignTaint(Value *Dest, Value *Src)
 	if(srcTaint == 0){
 		srcTaint = assignTaint(Src);
 	}
-	D(std::cerr << __func__ << "():assigning taint of source " << srcTaint << std::endl;)
+	// declare Source python object first
+	if(markerTypeMap.find(Dest) != markerTypeMap.end()){
+		auto pointerType = markerTypeMap[Dest];
+		if(pointerType == VAR_LENGTH_STR || pointerType == VAR_INT_ARR
+			|| pointerType == CONST_INT_ARR){
+				// 1 dimentional array
+			std::cerr << "t" << srcTaint << " = []" << std::endl;
+		}else if(pointerType == VAR_STR_ARR || pointerType == CONST_STR_ARR ){
+				// 2 dimentional array
+			std::cerr << "t" << srcTaint << " = [[]]" << std::endl;
+		}
+	}	
 	std::cerr << "t" << (*TMap)[Dest] << " = t" << srcTaint << std::endl;
 	(*TMap)[Dest] = srcTaint;
 }
@@ -1267,6 +1296,8 @@ void pathCounter:: runOnInstructions(BasicBlock *B)
 			runOnICmp(IC);
 		} else if (AllocaInst *AI = dyn_cast<AllocaInst>(I)) {
 			runOnAlloca(AI);
+		} else if (GetElementPtrInst *GI = dyn_cast<GetElementPtrInst>(I)) {
+			runOnGetElementPtr(GI);
 		}
 	}
 }
@@ -1585,8 +1616,6 @@ BasicBlock* pathCounter::getNextMaxBB(BasicBlock *currentBB, std::map<std::strin
 void pathCounter :: getModel()
 {
 	std::cerr << "#>>>:::GETMODEL:::<<<" << std::endl;
-	std::cerr << "from z3 import *" << std::endl;
-	std::cerr << "s=Solver()" << std::endl;
 
 	TMap = new std::map<Value *, uint64_t>;
 	CMap = new std::map<uint64_t , uint64_t>;
@@ -1595,7 +1624,6 @@ void pathCounter :: getModel()
 		std::cerr << __func__ << "null value allocated" << std::endl;
 
 	solve();
-	std::cerr << "x=s.check()\nif(str(x) == \"sat\"):\n\tprint s.model()\nelse:\n\tprint str(x)" << std::endl;
 	delete TMap;
 	delete CMap;
 }
@@ -1901,54 +1929,27 @@ void pathCounter::markVariable(CallInst *CI){
 	std::string calledFunctionName(CI->getCalledFunction()->getName().data());
 	if(!calledFunctionName.compare("_mark_int")){
 		std::cerr << "t" << (*TMap)[markedValue] << "=" << "Int('t" << (*TMap)[markedValue] <<"')" << std::endl;
-		markerType = 1;			
+		markerType = INT;			
 	} else if(!calledFunctionName.compare("_mark_char")){
 			std::cerr << "t" << (*TMap)[markedValue] << "=" << "Char('t" << (*TMap)[markedValue] << "')" << std::endl;
-		markerType = 2;
+		markerType = CHAR;
 	} else if(!calledFunctionName.compare("_mark_var_str_arr")){
 			std::cerr << "t" << (*TMap)[markedValue] << "=" << "Array('t" << (*TMap)[markedValue] << "')" << std::endl;
-		markerType = 8;
+		markerType = VAR_STR_ARR;
+	} else if(!calledFunctionName.compare("_mark_var_int_arr")){
+			std::cerr << "t" << (*TMap)[markedValue] << "=" << "IntArr('t" << (*TMap)[markedValue] << "', 32, 1)" << std::endl;
+		markerType = VAR_INT_ARR;
+	} else if(!calledFunctionName.compare("_mark_const_int_arr")){
+		unsigned arrLength = getConstant(CI->getArgOperand(1));
+		std::cerr << "t" << (*TMap)[markedValue] << "=" << "ConstIntArr('t" << (*TMap)[markedValue] << "', " << arrLength << ")" << std::endl;
+		markerType = CONST_INT_ARR;
 	} else {
 		std::cerr << "TODO: add type for " << calledFunctionName << "(): function "<< std::endl;
 		assert(0);
 	}
-//
-//extern char _mark_char( char addr);
-//extern char _mark_var_str( char* addr);
-//extern char _mark_const_str( char* addr, int len);
-//extern char _mark_var_str_arr( char **addr);
-//extern char _mark_var_int_arr( int **addr );
-//extern char _mark_const_int_arr( int **addr , int len);
-//extern char _mark_const_str_arr( char **addr, int len);
 
 	markerTypeMap[markedValue] = markerType;
 
-//	switch(markerType){
-//		case INT:
-//			std::cerr << "t" << (*TMap)[markedValue] << "=" << "Int('t" << (*TMap)[markedValue] <<"')" << std::endl;
-//			break;
-//		case CONSTANT_STR:
-//			std::cerr << "t" << (*TMap)[markedValue] << "=" << "MARK(CONSTANT_STR)" << std::endl;
-//			break;
-//		case VARIABLE_STR:
-//			std::cerr << "t" << (*TMap)[markedValue] << "=" << "MARK(VARIABLE_STR)" << std::endl;
-//			break;
-//		case CONSTANT_INT_ARRAY:
-//			std::cerr << "t" << (*TMap)[markedValue] << "=" << "MARK(CONSTANT_INT_ARRAY)" << std::endl;
-//			break;
-//		case CONSTANT_STRING_ARRAY:
-//			std::cerr << "t" << (*TMap)[markedValue] << "=" << "MARK(CONSTANT_STRING_ARRAY)" << std::endl;
-//			break;
-//		case VARIABLE_INT_ARRAY:
-//			std::cerr << "t" << (*TMap)[markedValue] << "=" << "MARK(VARIABLE_INT_ARRAY)" << std::endl;
-//			break;
-//		case VARIABLE_STRING_ARRAY:
-//			std::cerr << "t" << (*TMap)[markedValue] << "=" << "MARK(VARIABLE_STRING_ARRAY)" << std::endl;
-//			break;
-//		default:
-//			std::cerr << "ERROR! Unknown Mark TYPE!" << std::endl;
-//			assert(0);	
-//	}
 }
 
 void pathCounter::runOnCall(CallInst *CI) {
@@ -2040,7 +2041,56 @@ void pathCounter::runOnBinary(BinaryOperator *I) {
 void pathCounter::runOnAlloca(AllocaInst *I) {
 	assert(TMap->find(I) != TMap->end());
 	auto tnum = (*TMap)[I];
+	if(!I->getAllocatedType()->isPointerTy())
 	std::cerr << "t" << tnum << " = 0" << std::endl; 
+}
+
+void pathCounter::runOnGetElementPtr(GetElementPtrInst *I) {
+	if(I->hasIndices()){
+		int integer1 = -1;
+		int IndexTaintNo = 0;
+		unsigned numIndexes = 0;
+		// taint and collect all Indexes
+		for(auto op = I->idx_begin(); op!= I->idx_end() ; op++){
+			if (ConstantInt *CI = dyn_cast<ConstantInt>(op)){
+				if(CI->getBitWidth() <=64){
+                			integer1 = CI->getZExtValue();
+					if(TMap->find(CI) == TMap->end()){
+						std::cerr << "t" << taintNo << " = " <<integer1 << std::endl; 
+						(*TMap)[CI] = taintNo++;
+						IndexTaintNo = (*TMap)[CI];
+					}
+				}else{
+					std::cerr << "Found const value with size > 64" << std::endl;
+					assert(0);
+				}
+			}else{
+				if(TMap->find(*op)!=TMap->end()){
+					IndexTaintNo = (*TMap)[*op];	
+				}else{
+					(*TMap)[*op] = taintNo++;
+					IndexTaintNo = (*TMap)[*op];
+				}
+			}
+			numIndexes ++;
+		}
+		auto ptrOperand = I->getPointerOperand();
+		int arrTaint = (*TMap)[ptrOperand];
+//		if(integer1 >= 0){
+//			std::cerr << "extendList(t" << arrTaint << ","<< integer1 + 1 << ", 't" << arrTaint << "')" << std::endl;
+//		}else{
+//			std::cerr << "extendList(t" << arrTaint << ",t"<< IndexTaintNo  << ", 't" << arrTaint << "')" << std::endl;
+//		//	std::cerr << "non-constant offset for " << "" << std::endl;
+//		}
+		auto instructionTaint = (*TMap)[I];
+		if(numIndexes == 1){ // 1D Array
+			std::cerr << "t" << instructionTaint << " = t" << arrTaint << "[ t" << IndexTaintNo << " ]" << std::endl;
+		}
+//		std::cerr << "t" << instructionTaint << " = BitVectorToInt(t" << arrTaint << "[ " << integer1 << " ])" << std::endl;
+	}else{
+		std::cerr << "Found getElementPTR with 0 indices " << std::endl;
+		assert(0);
+	}	
 }
 
 void pathCounter::runOnICmp(ICmpInst *I) {

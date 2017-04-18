@@ -1,0 +1,6 @@
+x=s.check()
+if(str(x) == "sat"):
+	print s.model()
+else:
+	print str(x)
+
