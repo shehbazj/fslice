@@ -1,0 +1,17 @@
+p = Bool('p')
+x = Real('x')
+s = Solver()
+s.add(Or(x < 5, x > 10), Or(p, x**2 == 2), Not(p))
+s.check()
+m = s.model()
+print m[p], m[x]
+print "is_true(m[p]):", is_true(m[p])
+print "is_false(m[p]):", is_false(m[p])
+print "is_int_value(m[x]):", is_int_value(m[x])
+print "is_rational_value(m[x]):", is_rational_value(m[x])
+print "is_algebraic_value(m[x]):", is_algebraic_value(m[x])
+r = m[x].approx(20) # r is an approximation of m[x] with precision 1/10^20
+print "is_rational_value(r):", is_rational_value(r)
+print r.numerator_as_long()
+print r.denominator_as_long()
+print float(r.numerator_as_long())/float(r.denominator_as_long())

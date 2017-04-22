@@ -1,5 +1,3 @@
-#!/usr/bin/python
-
 from z3 import *
 
 def IntArr(prefix, sz, N):
@@ -21,41 +19,51 @@ def BitVectorToInt(var):
     if type(var) is int:    # if already int dont do anything
         return
     elif is_bv(var) and var.size() == 32: # if bitvector is int of size
-        # 32, then return Integer equavalent
+      # 32, then return Integer equavalent
         ctx = var.ctx
         return ArithRef(Z3_mk_bv2int(ctx.ref(), var.as_ast(), 0), ctx)
     else:       # if bitvector is that of char, return as is
             # since all character operations happen on bitvector
         return var
 
-def ConstIntArr(var, size):
-  	return [ BitVec('%s__%s' % (var, i), 32) for i in range(size) ]
-
-def indexSanitizer(index, arrSize, s):
-	s.push()
-	s.add(index < 0)
-	if(s.check() == z3.sat):
-		print "NEGATIVE INDEX POSSIBLE"
-		print (s.model())
-	s.pop()
-	
-	s.push()
-	s.add(index >= arrSize)
-	if(s.check() == z3.sat):
-		print "OVERFLOW INDEX POSSIBLE"
-		print (s.model())
-	s.pop()
-
-	s.push()
-	s.add(index >=0 , index < arrSize)
-	if(s.check() != z3.sat):
-		print "VALID ARRAY INDEX NOT POSSIBLE"
-		s.pop()
-		return -1
-	else:
-		index = s.model()[index]
-		return index
-
-set_param('smt.bv.enable_int2bv',True)
-
 s = Solver()
+#!/usr/bin/python
+t1=IntArr('t1', 32, 1)
+t100=CharArr('t100', 8 , 1)
+t101= t100[0]
+x = BitVecVal(ord('x'), 8)
+s.add(t101 == x)
+t2=Int('t2')
+t7=t1
+t9=t2
+t3 = 0
+t5 = 0
+t23 = 0
+t3 = t23
+t4 = []  
+t1 = t4
+t4 = t7
+t2 = t5
+t5 = t9
+t11 = t7
+t24 = 10
+extendList(t7,11, 't7')
+t12 = BV2Int(t7[ 10 ])
+t25 = 5
+t12 = t25
+t14 = t7
+extendList(t7,11, 't7')
+t15 = BV2Int(t7[ 10 ])
+t16 = t15
+t17 = t9
+t18 = t15 + t9
+t19 = t7
+t26 = 11
+extendList(t7,12, 't7')
+t20 = t7[ 11 ]
+t20 = t18
+x=s.check()
+if(str(x) == "sat"):
+	print s.model()
+else:
+	print str(x)
