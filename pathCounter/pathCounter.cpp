@@ -206,8 +206,6 @@ uint64_t  LoadStoreSize(const DataLayout *DL, Value *P);
 	BasicBlock*  getAlternateBB(BasicBlock *parentBB, const char *loopBackBBName);
 	bool isTerminalFunction();
 	void getTerminalFunctions();
-	void processBBInstructions(std::map <std::string, unsigned> *GbbMap, std::list <std::string > *traversedBB, std::string funName);
-	void evaluatePath(std::map<std::string, unsigned > *GbbMap, std::string funName, std::list <std::string> *traversedList);
 	void enumeratePaths(std::map<std::string, unsigned > *GbbMap, BasicBlock *BB);
 
 	void __fslice_store (uint64_t size, Value  *addr , Value *taint);
@@ -217,6 +215,7 @@ uint64_t  LoadStoreSize(const DataLayout *DL, Value *P);
   int marked(Value *V);
 
   uint64_t getTaint(Value *V);
+  uint64_t updateTaint(Value *V);
   Value *LoadTaint(Instruction *I, Value *V);
 
 	// stores loopBack Basic Block and its successor basic block that creates
@@ -1065,99 +1064,6 @@ void pathCounter:: getModuleLevelPP( std::map < std::string, unsigned> *GbbMap)
 	std::cerr << "Total PP " << totalPP << std::endl;
 }
 
-void pathCounter::processBBInstructions(std::map <std::string, unsigned> *GbbMap, std::list <std::string > *traversedList, std::string parentFunName)
-{
-//	if(LocalBB->hasName())
-//		std::cerr << parentFunName << "BB()" <<  LocalBB->getName().data() << std::endl;
-//	for(auto &I : *LocalBB){
-//		if (LoadInst *LI = dyn_cast<LoadInst>(&I)) {
-//			runOnLoad(LocalBB, LI);
-//		}/* else if (StoreInst *SI = dyn_cast<StoreInst>(&I)) {
-//    			  runOnStore(BB, SI);
-//    		} else if (MemIntrinsic *MI = dyn_cast<MemIntrinsic>(&I)) {
-//      			runOnIntrinsic(BB, MI);
-//    		} else*/ 
-//		if (CallInst *CI = dyn_cast<CallInst>(&I)) {
-//			if(CI->getCalledFunction() != NULL && CI->getCalledFunction()->hasName()){
-//				auto function = CI->getCalledFunction();
-//				auto funName = function->getName().data();
-//				if(!strcmp(funName, "_mark")){
-//					std::cerr << "Found Mark Function " << std::endl;
-//					auto arg = CI->getArgOperand(0);
-//					track(arg);
-//				}
-//				std::cerr << LocalBB->getName().data() << " calls function()" << funName << std::endl;
-//				// skip declared functions
-//				if(function->isDeclaration()){
-//					std::cerr << funName << "() is declaration " << std::endl; 
-//					continue;
-//				}
-//				std::cerr << "EVALUATE PATH" << funName << std::endl;
-//				evaluatePath(GbbMap, funName, traversedList);
-//			}else{
-//				std::cerr << "Name not found for BB " << LocalBB->getName().data() << std::endl;
-//			}
-//    		}/* else if (ReturnInst *RI = dyn_cast<ReturnInst>(&I)) {
-//      			runOnReturn(BB, RI);
-//    		} else if (UnaryInstruction *UI = dyn_cast<UnaryInstruction>(&I)) {
-//      			runOnUnary(BB, UI);
-//    		} else if (BinaryOperator *BI = dyn_cast<BinaryOperator>(&I)) {
-//      			runOnBinary(BB, BI);
-//    		} else if (ICmpInst *IC = dyn_cast<ICmpInst>(&I)) {
-//      			runOnICmp(BB, IC);	
-//    		} */
-//	}
-}
-
-void pathCounter::evaluatePath(std::map< std::string, unsigned> *GbbMap, std::string funName, std::list<std::string> *traversedBB)
-{
-	auto &BB = M->getFunction(funName.c_str())->getEntryBlock();
-	auto TermInst = BB.getTerminator();
-	LocalBB = &BB;
-	while(TermInst -> getNumSuccessors() != 0 )
-	{
-		processBBInstructions(GbbMap, traversedBB, funName);
-		if(TermInst->getNumSuccessors() == 0){	// reached end of path
-			std::cerr << "Terminating at " << LocalBB->getName().data() << std::endl;
-			break;
-		}else if(TermInst->getNumSuccessors() == 1){
-			LocalBB = TermInst->getSuccessor(0);
-			if(!LocalBB->hasName())
-				continue;
-			TermInst = TermInst->getSuccessor(0)->getTerminator();
-			std::string str(funName);
-			str+= LocalBB->getName().data();
-			traversedBB->push_back(str);
-		}else{
-			unsigned max = 0;
-			for(unsigned i = 0 ; i < TermInst->getNumSuccessors() ; i++){
-				std::string nextBBName(funName);
-				nextBBName+= std::string(TermInst->getSuccessor(i)->getName().data());
-				if(GbbMap->find(nextBBName) == GbbMap->end()){
-					std::cerr<< "Basic Block PP not found " << nextBBName << std::endl;	
-					exit(0);
-				}
-				if((*GbbMap)[nextBBName] > max && (std::find(traversedBB->begin(), traversedBB->end(), nextBBName) == traversedBB->end())){
-					std::cerr << "found " << nextBBName << " with weight " << (*GbbMap)[nextBBName] << std::endl;
-					max = (*GbbMap)[nextBBName];
-					LocalBB = TermInst->getSuccessor(i);
-				//	if(!LocalBB->hasName())
-				//		continue;
-				}
-			}
-			if(max == 0){
-				break;	
-			}
-			TermInst = LocalBB->getTerminator();
-			std::string bbName(funName);
-			bbName.append(LocalBB->getName().data());
-			traversedBB->push_back(bbName);
-		//	processBBInstructions(GbbMap);		
-		}
-	}
-	processBBInstructions(GbbMap, traversedBB, funName); // for the terminal Basic Block
-}
-
 /**
  *  go through all basic blocks in function in depth first order and assign all operands 
  *  appropriate taints when loop is detected, send all loop related basic blocks to loop 
@@ -1222,8 +1128,10 @@ void pathCounter::assignTaint(Value *Dest, Value *Src)
 			std::cerr << "t" << srcTaint << " = [[]]" << std::endl;
 		}
 	}	
+	auto destTaint = updateTaint(Dest);
+	(*TMap)[Dest] = destTaint;
 	std::cerr << "t" << (*TMap)[Dest] << " = t" << srcTaint << std::endl;
-	(*TMap)[Dest] = srcTaint;
+//	(*TMap)[Dest] = srcTaint;
 }
 
 void pathCounter::taintInstructions()
@@ -1273,7 +1181,7 @@ void pathCounter:: runOnInstructions(BasicBlock *B)
 {
 	printMarkedInstructions(B);
 	taintInstructions(B);
-	// taintArguments();	
+	// taintArguments();
 	derivePreviousCondition(B);
 	for (auto I = B->begin(); I != B->end() ; I++) {
 		if (LoadInst *LI = dyn_cast<LoadInst>(I)) {
@@ -1483,7 +1391,7 @@ std::tuple <BasicBlock *, uint64_t> pathCounter:: getNextBB(std::string *bbStrin
 bool pathCounter :: solve()
 {
 	std::string bbString(pathContext);
-	D(std::cerr << __func__ << "():PATH CONTEXT " << pathContext << std::endl;)
+	std::cerr << "#"<< __func__ << "():PATH CONTEXT " << pathContext << std::endl;
 	while(!bbString.empty()){
 		auto x = getNextBB(&bbString);
 		runOnInstructions(std::get<0>(x));
@@ -1616,6 +1524,7 @@ BasicBlock* pathCounter::getNextMaxBB(BasicBlock *currentBB, std::map<std::strin
 void pathCounter :: getModel()
 {
 	std::cerr << "#>>>:::GETMODEL:::<<<" << std::endl;
+	std::cerr << "#" << pathContext << std::endl;
 
 	TMap = new std::map<Value *, uint64_t>;
 	CMap = new std::map<uint64_t , uint64_t>;
@@ -1720,7 +1629,6 @@ void pathCounter :: initializeVariables(Module &M_)
         VoidPtrTy = PointerType::getUnqual(IntegerType::getInt8Ty(*C));
 	taintNo = 1;
 }
-
 
 bool pathCounter::runOnModule(Module &M_) {
 	std::map< std::string, unsigned> GbbMap;
@@ -1855,6 +1763,23 @@ uint64_t pathCounter::getTaint(Value *V) {
 			}
 		}
 	}		
+	return 0;
+}
+
+uint64_t pathCounter::updateTaint(Value *V) {
+   if (V->getType()->isFPOrFPVectorTy()) return 0;
+	if (ConstantInt *CI = dyn_cast<ConstantInt>(V)){
+		if(CI->getBitWidth() <=64){
+			auto integer = CI->getZExtValue();
+			if(CMap->find(integer) != CMap->end()){
+				return (*CMap)[integer];
+			}
+		}
+	}
+	if(TMap->find(V) != TMap->end()){
+		(*TMap)[V] = taintNo++;
+		return (*TMap)[V];
+	}
 	return 0;
 }
 
@@ -2032,17 +1957,17 @@ void pathCounter::runOnBinary(BinaryOperator *I) {
 	if(t1 == 0){
 		t1 = assignTaint(operand1);
 	}
-	auto instructionTaint = getTaint(I);
+	auto instructionTaint = updateTaint(I);
 	assert(instructionTaint);
-	//std::cerr  <<  "t" << instructionTaint << "=("<< I->getOpcodeName() << ",t" << t0 << " , t" << t1 << ")" << std::endl;
 	std::cerr  <<  "t" << instructionTaint << " = t" << t0  << getSymbol(I->getOpcodeName())  << " t" << t1 << std::endl;
 }
 
 void pathCounter::runOnAlloca(AllocaInst *I) {
 	assert(TMap->find(I) != TMap->end());
 	auto tnum = (*TMap)[I];
-	if(!I->getAllocatedType()->isPointerTy())
-	std::cerr << "t" << tnum << " = 0" << std::endl; 
+	//if(!I->getAllocatedType()->isPointerTy())
+	if(I->getAllocatedType()->isIntegerTy())
+		std::cerr << "t" << tnum << " = Int('t" << tnum << "')" << std::endl;
 }
 
 void pathCounter::runOnGetElementPtr(GetElementPtrInst *I) {
@@ -2076,17 +2001,14 @@ void pathCounter::runOnGetElementPtr(GetElementPtrInst *I) {
 		}
 		auto ptrOperand = I->getPointerOperand();
 		int arrTaint = (*TMap)[ptrOperand];
-//		if(integer1 >= 0){
-//			std::cerr << "extendList(t" << arrTaint << ","<< integer1 + 1 << ", 't" << arrTaint << "')" << std::endl;
-//		}else{
-//			std::cerr << "extendList(t" << arrTaint << ",t"<< IndexTaintNo  << ", 't" << arrTaint << "')" << std::endl;
-//		//	std::cerr << "non-constant offset for " << "" << std::endl;
-//		}
-		auto instructionTaint = (*TMap)[I];
+		//auto instructionTaint = (*TMap)[I];
+		auto instructionTaint = updateTaint(I);
 		if(numIndexes == 1){ // 1D Array
-			std::cerr << "t" << instructionTaint << " = t" << arrTaint << "[ t" << IndexTaintNo << " ]" << std::endl;
+			std::cerr << "namet" << arrTaint << "= get_var_name(t" << arrTaint << "=t" << arrTaint << ")" << std::endl;
+			std::cerr << "namet" << IndexTaintNo << "= get_var_name(t" << IndexTaintNo << "=t" << IndexTaintNo << ")" << std::endl;
+			std::cerr << "t" << instructionTaint << " = getElement(t" << arrTaint << ",t" << IndexTaintNo 
+				<< ",namet" << arrTaint << ",namet" << IndexTaintNo << ")" << std::endl;
 		}
-//		std::cerr << "t" << instructionTaint << " = BitVectorToInt(t" << arrTaint << "[ " << integer1 << " ])" << std::endl;
 	}else{
 		std::cerr << "Found getElementPTR with 0 indices " << std::endl;
 		assert(0);
@@ -2105,6 +2027,9 @@ void pathCounter::runOnICmp(ICmpInst *I) {
 	if(t2 == 0)
 		t2 = assignTaint(op2);
 	auto iTaint = getTaint(I);
+	if(iTaint == 0){
+		assert(0);
+	}
 
 	// should not overwrite existing comparision instruction
 	assert(linkComparatorIsEmpty());

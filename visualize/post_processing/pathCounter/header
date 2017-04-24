@@ -6,6 +6,24 @@ def IntArr(prefix, sz, N):
   """Create a vector with N Bit-Vectors of size sz"""
   return [ BitVec('%s__%s' % (prefix, i), sz) for i in range(N) ]
 
+def get_var_name(**kwargs): return kwargs.keys()[0]
+
+def getElement(arr , idx, name1, name2):
+    if type(idx) is int:
+        return arr[idx]
+    name = name1+name2
+    symVar = Int(name)
+    return symVar
+
+def indexCheck(lhs, rhs, lhsName):
+    if type(lhs) is int:
+        return ''
+    else:
+        lhs  = Int(lhsName)
+        s.add(lhs ==rhs)
+        s.add(lhs >= 0)
+        return line
+
 def CharArr(prefix, sz, N):
   """Create a vector with N Bit-Vectors of size sz"""
   return [ BitVec('%s__%s' % (prefix, i), sz) for i in range(N) ]
