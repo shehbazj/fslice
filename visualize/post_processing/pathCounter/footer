@@ -1,6 +1,7 @@
 x=s.check()
-if(str(x) == "sat"):
-	print s.model()
+if(x == z3.sat):
+	m = s.model()
+	print m
 else:
-	print str(x)
+	print unsat
 

@@ -13,19 +13,56 @@ from collections import defaultdict
 
 offsets = defaultdict(list)
 
+# symbolic array objects
+# each list of arrObjects[count]
+# represents list of symbols sym that got assigned by
+# sym = getElement(t_array, t_index, name_t_array, name_t_index)
+
+arrObjects = defaultdict(list)
+
+# symbolic indexes
+# each list indexes[count]
+# represents list of index symbols that got assigned by
+# sym = getElement(t_array, index, name_t_array, name_index)
+
+indexes = defaultdict(list)
+
+
+def generateIndexConstraints(count):
+    objList = arrObjects[count]
+    indexConstraintString = '' 
+    indexList = indexes[count]
+    for i in range(len(objList)):
+        for j in range(i + 1, len(objList)):
+            indexConstraintString += ( "s.add(Implies(" + indexList[i][0] + " == " + indexList[j][0] + "," + objList[i][0] + " == " + objList[j][0] + "))\n" )
+    return indexConstraintString
+
 def getOffsetTaints():
     count=0
     offsetList = []
+    arrObjectList = []
+    indexList = []
     lines = tuple(open("/tmp/path", 'r'))
     for line in lines:
         if "GETMODEL" in line:
             offsets[count] = list(set(offsetList))
+            arrObjects[count] = arrObjectList
+            indexes[count] = indexList
             count = count + 1
             offsetList = []
+            arrObjectList = []
+            indexList = []
+
         elif 'getElement' in line:
             taintObj = line.split(",")[1]
             if taintObj is not '':
                 offsetList.append(taintObj)
+            #print line
+            arrObj = line.split("=")[0].rsplit()
+            arrObjectList.append(arrObj)
+            index = line.split(",")[1].rsplit()
+            indexList.append(index)
+    
         
 
 symbolicObjects = set()
@@ -122,6 +159,8 @@ if __name__ == "__main__":
             textFile = open(fName, "w")
             textFile.write(header)
             textFile.write(currentLine)
+            indexConstraintString = generateIndexConstraints(count)
+            textFile.write(indexConstraintString)
             textFile.write(footer)
             textFile.close()
             count +=1

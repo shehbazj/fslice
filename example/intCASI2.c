@@ -13,12 +13,12 @@ int main()
 		int x = a[i];
 		if(a[x] == 3){
 			a[x] = a[i];
-		}/*
+		}
 		if(a[x + i] == a[i]){
 			a[i] = 20;
 		}else{
 			a[x] = 20;
-		}*/
+		}
 	}
 	return 0;
 }
