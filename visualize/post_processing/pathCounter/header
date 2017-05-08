@@ -8,20 +8,22 @@ def IntArr(prefix, sz, N):
 
 def get_var_name(**kwargs): return kwargs.keys()[0]
 
+
+
 def getElement(arr , idx, name1, name2):
-    if type(idx) is int:
-        return arr[idx]
+    #if type(idx) is int:
+    #    return arr[idx]
     name = name1+name2
     symVar = Int(name)
     return symVar
 
 def indexCheck(lhs, rhs, lhsName):
-    if type(lhs) is int:
-        return ''
-    else:
-        lhs  = Int(lhsName)
-        s.add(lhs ==rhs)
-        s.add(lhs >= 0)
+    #if type(lhs) is int:
+    #    return ''
+    #else:
+    lhs  = Int(lhsName)
+    s.add(lhs ==rhs)
+    s.add(lhs >= 0)
 
 def getZ3VariableFromString(s, varString):
     if(s.check() != z3.sat):
@@ -100,6 +102,9 @@ def CharArr(prefix, sz, N):
   """Create a vector with N Bit-Vectors of size sz"""
   return [ BitVec('%s__%s' % (prefix, i), sz) for i in range(N) ]
 
+def CharArr2D(prefix):
+    return [[]]
+
 def extendList(var, num, prefix):
     listSize = len(var)
     if num - listSize > 0:
@@ -119,7 +124,8 @@ def BitVectorToInt(var):
         return var
 
 def ConstIntArr(var, size):
-  	return [ BitVec('%s__%s' % (var, i), 32) for i in range(size) ]
+#  	return [ BitVec('%s__%s' % (var, i), 32) for i in range(size) ]
+    return []
 
 def indexSanitizer(index, arrSize, s):
 	s.push()

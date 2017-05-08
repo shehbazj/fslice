@@ -52,11 +52,21 @@ struct Branch {
 	std::string b2;
 }linkBranch;
 
+std::map<int, const char *> varType {
+{ 0, "i"},
+{ 1, "pi"},
+{ 2, "c"},
+{ 3, "pc"},
+{ 4, "ppc"},
+};
+
 struct Comparator {
 	uint64_t taint;
 	std::string sign;
 	uint64_t t1;
+	uint64_t t1Type;
 	uint64_t t2;
+	uint64_t t2Type;
 } linkComparator;
 
 std::map<int , const char *> Predicate {
@@ -289,7 +299,7 @@ uint64_t  LoadStoreSize(const DataLayout *DL, Value *P);
   std::map <Value *, uint64_t> InstructionTaints;
 
 
-void assignTaint(Value *Dest, Value *Src);
+void assignTaint(Value *Dest, Value *Src, char taintType);
 uint64_t assignTaint(Value *Val);
 
 // creates a map of function and map of instruction and taints
@@ -336,6 +346,7 @@ uint64_t assignTaint(Value *Val);
 
 void pathCounter :: derivePreviousCondition(BasicBlock *BB)
 {
+	std::cerr << "#" << __func__ << "()" << std::endl;
 	auto basicBlockName = BB->getName().data();
 	bool comparator;
 	if(linkBranchIsEmpty())
@@ -346,10 +357,10 @@ void pathCounter :: derivePreviousCondition(BasicBlock *BB)
 		// s.add( t2 < t17)
 		comparator = !strcmp(basicBlockName, linkBranch.b1.c_str());
 		if(comparator){
-			std::cerr << "s.add( t" << linkComparator.t1 << linkComparator.sign 
-						<< " t"<< linkComparator.t2 << " )"<< std::endl;			
+			std::cerr << "s.add( i" << linkComparator.t1 << linkComparator.sign 
+						<< " i"<< linkComparator.t2 << " )"<< std::endl;			
 		}else{
-			std::cerr << "s.add(( t"<< linkComparator.t1 << linkComparator.sign << " t"<< linkComparator.t2 
+			std::cerr << "s.add(( i"<< linkComparator.t1 << linkComparator.sign << " i"<< linkComparator.t2 
 				<< ") == False )"<< std::endl;
 		}
 		clearLinkBranch();
@@ -387,8 +398,10 @@ std::string pathCounter :: getSymbol(std::string opCode){
 		return std::string (" + ");
 	}else if(!opCode.compare("sub")){
 		return std::string (" - ");
+	}else if(!opCode.compare("ne")){
+		return std::string (" != ");
 	}else{
-		std::cerr << "TODO ADD CONDITION FOR PRED" << opCode << std::endl;
+		std::cerr << "YYY TODO ADD CONDITION FOR PRED" << opCode << std::endl;
 		assert(0);
 	}
 }
@@ -402,8 +415,10 @@ std::string  pathCounter :: getSign(std::string pred){
 		return std::string (" < ");
 	}else if(!pred.compare("ICMP_EQ")){
 		return std::string (" == ");
+	}else if(!pred.compare("ICMP_NE")){
+		return std::string (" != ");
 	}else{
-		std::cerr << "TODO ADD CONDITION FOR PRED " << pred << std::endl;
+		std::cerr << "XXX TODO ADD CONDITION FOR PRED " << pred << std::endl;
 		assert(0);
 	}
 }
@@ -1072,6 +1087,7 @@ void pathCounter:: getModuleLevelPP( std::map < std::string, unsigned> *GbbMap)
  * **/
 void pathCounter::runOnFunction()
 {
+	std::cerr << __func__ << "()" << std::endl;
 	taintInstructions();
 	//runOnArgs();
 /*
@@ -1087,13 +1103,14 @@ void pathCounter::runOnFunction()
 
 uint64_t pathCounter::assignTaint(Value *V)
 {
+	std::cerr << "#" << __func__ << "()" << std::endl;
 	uint64_t integer;
 	if (ConstantInt *CI = dyn_cast<ConstantInt>(V)){
 		if(CI->getBitWidth() <=64){
 			integer = CI->getZExtValue();
 			if(CMap->find(integer) == CMap->end()){
 				//std::cerr << __func__ << "():Assigning int constant " << integer << " taint value " << taintNo << std::endl;
-				std::cerr << "t" << taintNo << " = " << integer << std::endl;
+				std::cerr << "i" << taintNo << " = " << integer << std::endl;
 				(*CMap)[integer] = taintNo++;
 			}
 			D(std::cerr << "integer value " << integer << " has taint " << (*CMap)[integer];)
@@ -1110,32 +1127,34 @@ uint64_t pathCounter::assignTaint(Value *V)
 	return (*TMap)[V];	
 }
 
-void pathCounter::assignTaint(Value *Dest, Value *Src)
+void pathCounter::assignTaint(Value *Dest, Value *Src, char taintType)
 {
+	std::cerr << "#" << __func__ << "()" << std::endl;
 	auto srcTaint = getTaint(Src);
 	if(srcTaint == 0){
 		srcTaint = assignTaint(Src);
 	}
 	// declare Source python object first
-	if(markerTypeMap.find(Dest) != markerTypeMap.end()){
-		auto pointerType = markerTypeMap[Dest];
-		if(pointerType == VAR_LENGTH_STR || pointerType == VAR_INT_ARR
-			|| pointerType == CONST_INT_ARR){
-				// 1 dimentional array
-			std::cerr << "t" << srcTaint << " = []" << std::endl;
-		}else if(pointerType == VAR_STR_ARR || pointerType == CONST_STR_ARR ){
-				// 2 dimentional array
-			std::cerr << "t" << srcTaint << " = [[]]" << std::endl;
-		}
-	}	
+//	if(markerTypeMap.find(Dest) != markerTypeMap.end()){
+//		auto pointerType = markerTypeMap[Dest];
+//		if(pointerType == VAR_LENGTH_STR || pointerType == VAR_INT_ARR
+//			|| pointerType == CONST_INT_ARR){
+//				// 1 dimentional array
+//			std::cerr << "t" << srcTaint << " = []" << std::endl;
+//		}else if(pointerType == VAR_STR_ARR || pointerType == CONST_STR_ARR ){
+//				// 2 dimentional array
+//			std::cerr << "t" << srcTaint << " = [[]]" << std::endl;
+//		}
+//	}	
 	auto destTaint = updateTaint(Dest);
 	(*TMap)[Dest] = destTaint;
-	std::cerr << "t" << (*TMap)[Dest] << " = t" << srcTaint << std::endl;
+	std::cerr << taintType << (*TMap)[Dest] << " = " << taintType << srcTaint << std::endl;
 //	(*TMap)[Dest] = srcTaint;
 }
 
 void pathCounter::taintInstructions()
 {
+	std::cerr << "#" << __func__ << "()" << std::endl;
 	TMap = new std::map<Value *, uint64_t>;
 	if(TMap == nullptr)
 		std::cerr << __func__ << "null value allocated" << std::endl;
@@ -1154,6 +1173,7 @@ void pathCounter::taintInstructions()
 
 void pathCounter::taintInstructions(BasicBlock *B)
 {
+	std::cerr << "#" << __func__ << "()" << std::endl;
 	for (auto &I : *B) {
 		if(TMap->find(&I) == TMap->end()){
 			(*TMap)[&I] =taintNo++;
@@ -1161,8 +1181,9 @@ void pathCounter::taintInstructions(BasicBlock *B)
 		if(CallInst *CI = dyn_cast<CallInst>(&I)) {
 			std::string callFunctionName(CI->getCalledFunction()->getName().data());
 			if(callFunctionName.find("_mark") != std::string::npos){
-				std::cerr << "t" << (*TMap)[&I] 
-					<< "=t" << (*TMap)[CI->getOperand(0)] << std::endl;
+				auto taintType = CI->getCalledFunction()->getReturnType()->isPointerTy() ? 'p' : 'i';
+				std::cerr << taintType << (*TMap)[&I] 
+					<< "=" << taintType << (*TMap)[CI->getOperand(0)] << std::endl;
 			}
 		}	
 	}
@@ -1192,9 +1213,9 @@ void pathCounter:: runOnInstructions(BasicBlock *B)
 			runOnBranch(BI);
 		} /*else if (MemIntrinsic *MI = dyn_cast<MemIntrinsic>(I)) {
 			runOnIntrinsic(MI);
-		}*/ else if (CallInst *CI = dyn_cast<CallInst>(I)) {
+		} else if (CallInst *CI = dyn_cast<CallInst>(I)) {
 			runOnCall(CI);
-		} /*else if (ReturnInst *RI = dyn_cast<ReturnInst>(I)) {
+		} else if (ReturnInst *RI = dyn_cast<ReturnInst>(I)) {
 			//runOnReturn(RI);
 		}*/ else if (CastInst *CI = dyn_cast<CastInst>(I)) {
 			runOnCast(CI);
@@ -1587,7 +1608,7 @@ BasicBlock* pathCounter :: loadContext()
 void pathCounter::enumeratePaths(std::map<std::string, unsigned > *GbbMap, BasicBlock *currentBB)
 {
 	unsigned numSuccessors = currentBB->getTerminator()-> getNumSuccessors();
-	if(!hasFunctionCall(currentBB)){
+	//if(!hasFunctionCall(currentBB)){
 		if(numSuccessors == 0){
 			D(std::cerr <<__func__ << "():reached terminal path " << pathContext << std::endl;)
 			getModel(); // reach terminal block GENERATE TESTCASE
@@ -1615,7 +1636,7 @@ void pathCounter::enumeratePaths(std::map<std::string, unsigned > *GbbMap, Basic
 			if(isSolvable())
 				enumeratePaths(GbbMap, currentBB);
 		}
-	}
+	//}
 }
 
 void pathCounter :: initializeVariables(Module &M_)
@@ -1633,8 +1654,12 @@ void pathCounter :: initializeVariables(Module &M_)
 bool pathCounter::runOnModule(Module &M_) {
 	std::map< std::string, unsigned> GbbMap;
 	initializeVariables(M_);
-	// instrument the code for tainting
-	//taintBasicBlocks(&M_);
+	
+	for(auto &F_ : M->functions()){
+		F = &F_;
+		if(!F->isDeclaration())
+			std::cerr << __func__ << "():FUNCTION():" << F->getName().data() << std::endl;
+	}
 	
 	// get different possible paths from each basic block.
 	getModuleLevelPP(&GbbMap);
@@ -1783,55 +1808,64 @@ uint64_t pathCounter::updateTaint(Value *V) {
 	return 0;
 }
 
-// Get a value that contains the tainted data for a local variable, or zero if
-// the variable isn't tainted.
-
-Value *pathCounter::LoadTaint(Instruction *I, Value *V) {
-//  auto &IList = I->getParent()->getInstList();
-//  Instruction *RV = nullptr;
-//  if (auto TV = getTaint(V)) {
-//    RV = new LoadInst(TV);
-//  } else {
-//    if (IntegerType *IT = dyn_cast<IntegerType>(V->getType())) {
-//      Instruction *CV = nullptr;
-//      if (IT->isIntegerTy(IntPtrTy->getPrimitiveSizeInBits())) {
-//        CV = CastInst::CreateBitOrPointerCast(V, IntPtrTy);
-//      } else {
-//        CV = CastInst::Create(Instruction::ZExt, V, IntPtrTy);
-//      }
-//      IList.insert(I, CV);
-//      auto ValueFunc = CreateFunc(IntPtrTy, "__fslice_value", "",
-//                                  IntPtrTy);
-//      RV = CallInst::Create(ValueFunc, {CV});
-//    } else {
-//      return ConstantInt::get(IntPtrTy, 0, false);
-//    }
-//  }
-//  IList.insert(I, RV);
-//  return RV;
-	return nullptr;
-}
+/* 
+ * corresponding to the instructions of type
+ * %0 = load i32** %a, align 8
+ * %5 = load i32* %4, align 4
+ * we derive python code in single static assignment form without any phi nodes
+ * because each path containing basic blocks have basic blocks predefined, there
+ * are no unknown predecessor conditional paths or variables.
+ * for each load assignment, the equavalent code generated is as follows:
+ * t_a = t_b
+ * or
+ * p_a = p_b
+ * where t_a is temporary variable for a value.
+ * p_a is a temporary variable for a pointer.
+ * if p_a is a "marked variable" that has not yet been defined, we assign an
+ * empty list (or list of lists) to p_a
+ * */
 
 void pathCounter::runOnLoad(LoadInst *LI) {
+	//std:: cerr << "#" << __func__ << "()"<< std::endl;
 	// eg. %0 = load *x
 	// get taint of pointer, get taint of LI instruction
 	// assign pointer taint to LI instruction
 	auto P = LI->getPointerOperand();
-	assignTaint(LI, P);
+	/* print both operand types */
+	auto containedType = P->getType()->getContainedType(0);
+	if ( containedType -> isPointerTy()){
+		std::cerr << "#" << __func__ << "():contained type -- pointer type " << std::endl;
+	}
+	if ( containedType -> isIntegerTy()){
+		std::cerr << "#" << __func__ << "():contained type -- integer type " << std::endl;
+	}
+	char taintVariable = containedType ->isPointerTy() ? 'p' : 'i';
+	assignTaint(LI, P, taintVariable);
 }
 
 // Instrument a single instruction.
 void pathCounter::runOnStore(StoreInst *SI) {
+	std:: cerr << "#" << __func__ << "()"<< std::endl;
 	// store taint of Value, to taint of PointerAddress
 	// get Taint of Value, get taint of Pointer Address
 	// store Value of Pointer address, taint of Value
 
 	auto V = SI->getValueOperand();
+	
 	auto P = SI->getPointerOperand();
-	assignTaint(P, V);
+	auto containedType = P->getType()->getContainedType(0);
+	if ( containedType -> isPointerTy()){
+		std::cerr << "#" << __func__ << "():contained type -- pointer type " << std::endl;
+	}
+	if ( containedType -> isIntegerTy()){
+		std::cerr << "#" << __func__ << "():contained type -- integer type " << std::endl;
+	}
+	char taintVariable = containedType ->isPointerTy() ? 'p' : 'i';
+	assignTaint(P, V , taintVariable );
 }
 
 void pathCounter::markVariable(CallInst *CI){
+	std:: cerr << "#" << __func__ << "()"<< std::endl;
 //	enum symType markerType = UNDEFINED;	// see sym.h
 //	if(ConstantInt *I = dyn_cast<ConstantInt>(CI->getArgOperand(0))){
 //		if (I->getBitWidth() <= 64) {
@@ -1853,20 +1887,20 @@ void pathCounter::markVariable(CallInst *CI){
 	}
 	std::string calledFunctionName(CI->getCalledFunction()->getName().data());
 	if(!calledFunctionName.compare("_mark_int")){
-		std::cerr << "t" << (*TMap)[markedValue] << "=" << "Int('t" << (*TMap)[markedValue] <<"')" << std::endl;
+		std::cerr << "i" << (*TMap)[markedValue] << "=" << "Int('i" << (*TMap)[markedValue] <<"')" << std::endl;
 		markerType = INT;			
 	} else if(!calledFunctionName.compare("_mark_char")){
 			std::cerr << "t" << (*TMap)[markedValue] << "=" << "Char('t" << (*TMap)[markedValue] << "')" << std::endl;
 		markerType = CHAR;
 	} else if(!calledFunctionName.compare("_mark_var_str_arr")){
-			std::cerr << "t" << (*TMap)[markedValue] << "=" << "Array('t" << (*TMap)[markedValue] << "')" << std::endl;
+			std::cerr << "t" << (*TMap)[markedValue] << "=" << "CharArr2D('t" << (*TMap)[markedValue] << "')" << std::endl;
 		markerType = VAR_STR_ARR;
 	} else if(!calledFunctionName.compare("_mark_var_int_arr")){
-			std::cerr << "t" << (*TMap)[markedValue] << "=" << "IntArr('t" << (*TMap)[markedValue] << "', 32, 1)" << std::endl;
+			std::cerr << "p" << (*TMap)[markedValue] << "=" << "Int('p" << (*TMap)[markedValue] << "')" << std::endl;
 		markerType = VAR_INT_ARR;
 	} else if(!calledFunctionName.compare("_mark_const_int_arr")){
-		unsigned arrLength = getConstant(CI->getArgOperand(1));
-		std::cerr << "t" << (*TMap)[markedValue] << "=" << "ConstIntArr('t" << (*TMap)[markedValue] << "', " << arrLength << ")" << std::endl;
+		//unsigned arrLength = getConstant(CI->getArgOperand(1));
+		std::cerr << "p" << (*TMap)[markedValue] << "=" << "Int('p" << (*TMap)[markedValue]  << "')" << std::endl;
 		markerType = CONST_INT_ARR;
 	} else {
 		std::cerr << "TODO: add type for " << calledFunctionName << "(): function "<< std::endl;
@@ -1878,6 +1912,7 @@ void pathCounter::markVariable(CallInst *CI){
 }
 
 void pathCounter::runOnCall(CallInst *CI) {
+	std:: cerr << "#" << __func__ << "()"<< std::endl;
 	if(CI !=nullptr && CI->getCalledFunction() != nullptr && (CI->getCalledFunction()->hasName())){
 		std::string callFunctionName(CI->getCalledFunction()->getName().data());
 		if(callFunctionName.find("_mark") != std::string::npos){
@@ -1905,6 +1940,7 @@ void pathCounter::runOnCall(CallInst *CI) {
 }
 
 void pathCounter::runOnBranch(BranchInst *BI) {
+	std:: cerr << "#" << __func__ << "()"<< std::endl;
 	//int numSuccessors = BI->getNumSuccessors();
 	if(BI->isConditional()){
 		auto cond = BI->getCondition();
@@ -1931,6 +1967,7 @@ void pathCounter::runOnBranch(BranchInst *BI) {
 }
 
 void pathCounter::runOnReturn(ReturnInst *RI) {
+	std:: cerr << "#" << __func__ << "()"<< std::endl;
   	
   if (auto RV = RI->getReturnValue()) {
 	auto retTaint = getTaint(RV);
@@ -1942,35 +1979,47 @@ void pathCounter::runOnReturn(ReturnInst *RI) {
 }
 
 void pathCounter::runOnCast(CastInst *I) {
+	std:: cerr << "#" << __func__ << "()"<< std::endl;
 	auto operand = I->getOperand(0);
-	assignTaint(I, operand);
+	auto containedType = operand->getType();
+	char taintVariable = containedType ->isPointerTy() ? 'p' : 'i';
+	assignTaint(I, operand, taintVariable);
 }
 
 void pathCounter::runOnBinary(BinaryOperator *I) {
+	std:: cerr  << "#" << __func__ << "()"<< std::endl;
 	auto operand0 = I->getOperand(0);
 	auto operand1 = I->getOperand(1);
 	auto t0 = getTaint(operand0);
 	if(t0 == 0){
 		t0 = assignTaint(operand0);
 	}
+	auto t0Ty = operand0->getType()->isPointerTy() ? 'p' : 'i';
 	auto t1 = getTaint(operand1);
 	if(t1 == 0){
 		t1 = assignTaint(operand1);
 	}
+	auto t1Ty = operand1->getType()->isPointerTy() ? 'p' : 'i';
 	auto instructionTaint = updateTaint(I);
 	assert(instructionTaint);
-	std::cerr  <<  "t" << instructionTaint << " = t" << t0  << getSymbol(I->getOpcodeName())  << " t" << t1 << std::endl;
+	auto instructionTy = (t0Ty == 'i' && t1Ty == 'i') ? 'i' : 'p';
+	std::cerr  <<  instructionTy << instructionTaint << " = "<< t0Ty << t0  << getSymbol(I->getOpcodeName())  << " " << t1Ty << t1 << std::endl;
 }
 
 void pathCounter::runOnAlloca(AllocaInst *I) {
+	std:: cerr << "#" << __func__ << "()"<< std::endl;
 	assert(TMap->find(I) != TMap->end());
 	auto tnum = (*TMap)[I];
 	//if(!I->getAllocatedType()->isPointerTy())
-	if(I->getAllocatedType()->isIntegerTy())
-		std::cerr << "t" << tnum << " = Int('t" << tnum << "')" << std::endl;
+	if(I->getAllocatedType()->isIntegerTy()){
+		std::cerr << "i" << tnum << " = 0" << std::endl;
+	}else if(I->getAllocatedType()->isPointerTy()){
+		std::cerr << "p" << tnum << " = 0" << std::endl;
+	}
 }
 
 void pathCounter::runOnGetElementPtr(GetElementPtrInst *I) {
+	std:: cerr << "#" << __func__ << "()"<< std::endl;
 	if(I->hasIndices()){
 		int integer1 = -1;
 		int IndexTaintNo = 0;
@@ -2004,10 +2053,21 @@ void pathCounter::runOnGetElementPtr(GetElementPtrInst *I) {
 		//auto instructionTaint = (*TMap)[I];
 		auto instructionTaint = updateTaint(I);
 		if(numIndexes == 1){ // 1D Array
-			std::cerr << "namet" << arrTaint << "= get_var_name(t" << arrTaint << "=t" << arrTaint << ")" << std::endl;
-			std::cerr << "namet" << IndexTaintNo << "= get_var_name(t" << IndexTaintNo << "=t" << IndexTaintNo << ")" << std::endl;
-			std::cerr << "t" << instructionTaint << " = getElement(t" << arrTaint << ",t" << IndexTaintNo 
-				<< ",namet" << arrTaint << ",namet" << IndexTaintNo << ")" << std::endl;
+
+			// getElement in python code creates an Integer z3py variable of the name
+			// p<arrTaint>t<indexNumber> and assigns it to p<instructionTaint>
+			// for every getElementPtr instruction on a 1 D array, we get the following taint format:
+			// p45 = p44 + i5
+			// i45 = Int('p44i5')
+
+			std::cerr << "namep" << arrTaint << "= get_var_name(p" << arrTaint << "=p" << arrTaint << ")" << std::endl;
+			std::cerr << "namei" << IndexTaintNo << "= get_var_name(i" << IndexTaintNo << "=i" << IndexTaintNo << ")" << std::endl;
+			std::cerr << "i" << instructionTaint << " = getElement(p" << arrTaint << ",i" << IndexTaintNo 
+				<< ",namep" << arrTaint << ",namei" << IndexTaintNo << ")" << std::endl;
+			std::cerr << "p" << instructionTaint << " = p" << arrTaint  << " + i" << IndexTaintNo  << std::endl;
+		}else{
+			std::cerr << __func__ << "():TODO: more than 1D Index" << std::endl;
+			assert(0);
 		}
 	}else{
 		std::cerr << "Found getElementPTR with 0 indices " << std::endl;
@@ -2016,6 +2076,7 @@ void pathCounter::runOnGetElementPtr(GetElementPtrInst *I) {
 }
 
 void pathCounter::runOnICmp(ICmpInst *I) {
+	std:: cerr << "#" << __func__ << "()"<< std::endl;
 	auto op1 = I->getOperand(0);
 	auto op2 = I->getOperand(1);
 	auto Pred = I->getUnsignedPredicate();
@@ -2023,9 +2084,12 @@ void pathCounter::runOnICmp(ICmpInst *I) {
 	auto t1 = getTaint(op1);
 	if(t1 == 0)
 		t1 = assignTaint(op1);
+	//auto t1Type = getValType(op1);
+
 	auto t2 = getTaint(op2);
 	if(t2 == 0)
 		t2 = assignTaint(op2);
+	//auto t2Type = getValType(op2);
 	auto iTaint = getTaint(I);
 	if(iTaint == 0){
 		assert(0);

@@ -20,6 +20,8 @@ offsets = defaultdict(list)
 
 arrObjects = defaultdict(list)
 
+arrElements = defaultdict(list)
+
 # symbolic indexes
 # each list indexes[count]
 # represents list of index symbols that got assigned by
@@ -30,27 +32,44 @@ indexes = defaultdict(list)
 
 def generateIndexConstraints(count):
     objList = arrObjects[count]
+    elementList = arrElements[count]
     indexConstraintString = '' 
     indexList = indexes[count]
     for i in range(len(objList)):
         for j in range(i + 1, len(objList)):
             indexConstraintString += ( "s.add(Implies(" + indexList[i][0] + " == " + indexList[j][0] + "," + objList[i][0] + " == " + objList[j][0] + "))\n" )
+
+    # TODO getElement returns integer value which is 1 more than index value.
+    # currently we write an Implication of the form
+    # Implies( pXX + iXX == pYY + iYY, iXX+1 == iYY+1 )
+    # we need a way to derive YY index directly
+
+    for i in range(len(objList)):
+        for j in range(i + 1, len(objList)):
+            inextIndex = elementList[i]
+            jnextIndex = elementList[j]
+            indexConstraintString += ( "s.add(Implies(" + objList[i][0] + " + " + indexList[i][0] + " == " + objList[j][0] + " + " + indexList[j][0]
+                                    + ", " + inextIndex + " == " + jnextIndex + "))\n" )
+
     return indexConstraintString
 
 def getOffsetTaints():
     count=0
     offsetList = []
     arrObjectList = []
+    arrElementList = []
     indexList = []
     lines = tuple(open("/tmp/path", 'r'))
     for line in lines:
         if "GETMODEL" in line:
             offsets[count] = list(set(offsetList))
             arrObjects[count] = arrObjectList
+            arrElements[count] = arrElementList
             indexes[count] = indexList
             count = count + 1
             offsetList = []
             arrObjectList = []
+            arrElementList = []
             indexList = []
 
         elif 'getElement' in line:
@@ -58,13 +77,13 @@ def getOffsetTaints():
             if taintObj is not '':
                 offsetList.append(taintObj)
             #print line
-            arrObj = line.split("=")[0].rsplit()
+            arrObj = line.split("(")[1].split(",")[0].rsplit()
             arrObjectList.append(arrObj)
+            arrElem = line.split("=")[0]
+            arrElementList.append(arrElem)
             index = line.split(",")[1].rsplit()
             indexList.append(index)
     
-        
-
 symbolicObjects = set()
 
 # return true even if 1 token is symbolic
@@ -122,8 +141,7 @@ def processArray(arr, idx, lhs):
         currentStr += ( lhs + "=" + "Int('"+ arr + "_" + idx + "')" + "\n")
         return currentStr
         
-def process(line, offList):
- #   return None
+def process(line, offList, arrList):
     if "=" not in line:
         return None
     if "add" in line:
@@ -134,6 +152,12 @@ def process(line, offList):
         if lhs == idx:
             line += ( "indexCheck("+ lhs + "," + rhs + ", get_var_name("+ lhs + "=" + lhs + "))\n" )
             return line
+    for arrPtr in arrList:
+        if lhs == arrPtr[0]:
+            newline = ''
+            newline += ( arrPtr[0] + "= Int('" + arrPtr[0] + "')\n" )
+            newline += ( "s.add(" + arrPtr[0] + " == " + rhs + ")\n" )
+            return newline
     return None
 
 if __name__ == "__main__":
@@ -168,7 +192,7 @@ if __name__ == "__main__":
             continue
         else:
             if count is not 0 and line[0] is not '#':
-                processedLine = process(line, offsets[count])
+                processedLine = process(line, offsets[count], arrObjects[count])
                 if processedLine is None:
                     currentLine += line
                 else:
