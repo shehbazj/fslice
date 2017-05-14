@@ -1,4 +1,4 @@
-all: ifElse ifElse2 for forIfElse funCall forNested forNestedIfElse recursion switchCase for_klee users load dart eg1 eg1_assert tripleloop basic cmd intArray
+all: ifElse ifElse2 for forIfElse funCall forNested forNestedIfElse recursion switchCase for_klee users load dart eg1 eg1_assert tripleloop basic cmd intArray yes alloca arrDeref pointer
 CC=../llvm/build/bin/clang
 WCC=../whole-program-llvm/wllvm
 
@@ -17,8 +17,14 @@ users: ../coreutils/src/users.c
 	#./setup_env.sh
 	#$(WCC) -emit-llvm -c ../coreutils/src/users.c ../coreutils/lib/progname.c -I../coreutils/lib/ -Wunused-function -o users.bc
 
+yes: ../coreutils/src/yes.c
+	$(CC) -emit-llvm -c ../coreutils/src/yes.c -I../coreutils/lib -o yes.bc
+
 eg1_assert: eg1_assert.c
 	$(CC) -emit-llvm -c eg1_assert.c -o eg1_assert.bc
+
+arrDeref: arrDeref.c
+	$(CC) -emit-llvm -c arrDeref.c -o arrDeref.bc
 
 eg1: eg1.c
 	$(CC) -emit-llvm -c eg1.c -o eg1.bc
@@ -35,10 +41,19 @@ intArray: intArray.c
 	$(CC) -emit-llvm -c intSACI.c -o intSACI.bc
 	$(CC) -emit-llvm -c intCASI.c -o intCASI.bc
 	$(CC) -emit-llvm -c intCASI2.c -o intCASI2.bc
+	$(CC) -emit-llvm -c intCASI3.c -o intCASI3.bc
 	$(CC) -emit-llvm -c intSASI.c -o intSASI.bc
 	
+pointer: pointer1D_case1.c pointer1D_case2.c pointer1D_case3.c
+	$(CC) -emit-llvm -c pointer1D_case1.c -o pointer1D_case1.bc
+	$(CC) -emit-llvm -c pointer1D_case2.c -o pointer1D_case2.bc
+	$(CC) -emit-llvm -c pointer1D_case3.c -o pointer1D_case3.bc
+
 cmd: cmd.c
 	$(CC) -emit-llvm -c cmd.c -o cmd.bc
+
+alloca: alloca.c
+	$(CC) -emit-llvm -c alloca.c -o alloca.bc
 
 basic: basic.c
 	$(CC) -emit-llvm -c basic.c -o basic.bc

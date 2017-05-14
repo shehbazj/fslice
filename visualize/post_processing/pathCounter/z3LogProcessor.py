@@ -142,6 +142,8 @@ def processArray(arr, idx, lhs):
         return currentStr
         
 def process(line, offList, arrList):
+    if line[0] is '#':
+        return line
     if "=" not in line:
         return None
     if "add" in line:
@@ -191,7 +193,8 @@ if __name__ == "__main__":
             currentLine = ""
             continue
         else:
-            if count is not 0 and line[0] is not '#':
+            #if count is not 0 and line[0] is not '#':
+            if count is not 0:
                 processedLine = process(line, offsets[count], arrObjects[count])
                 if processedLine is None:
                     currentLine += line

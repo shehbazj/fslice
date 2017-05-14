@@ -4,15 +4,15 @@
 int main()
 {
 	int *a = _mark_var_int_arr( a );
-	int i = 2;
+//	CASE 1
 
-	if(a[i] == 4){
+	int *p = a;
+	p++;
+	*p = 10;
+
+	if(a[1] == 10){
 		;
 	}else{
-		i++;
-		if(a[i] == 4){
-			a[i] = 5;
-		}
+		;
 	}
-	return 0;
 }
