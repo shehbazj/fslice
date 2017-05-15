@@ -345,6 +345,7 @@ uint64_t assignTaint(Value *Val);
 	// and equate pointer variable with earlier taint of address (s.add p32 == p30)
 	// we also add interger (i32) variable and add i32 == 10
 	std::vector <int> symPtr;
+	void z3printPointerAndInteger(uint64_t lhs, uint64_t rhs);
 };
 
 /* derivePreviousCondition(BasicBlock *BB)
@@ -1119,7 +1120,8 @@ uint64_t pathCounter::assignTaint(Value *V)
 			integer = CI->getZExtValue();
 			if(CMap->find(integer) == CMap->end()){
 				//std::cerr << __func__ << "():Assigning int constant " << integer << " taint value " << taintNo << std::endl;
-				std::cerr << "i" << taintNo << " = " << integer << std::endl;
+				std::cerr << "i" << taintNo << " = Int('i" << taintNo << "')" << std::endl;
+				std::cerr << "s.add(i" << taintNo << " == " << integer << ")" << std::endl;
 				(*CMap)[integer] = taintNo++;
 			}
 			D(std::cerr << "integer value " << integer << " has taint " << (*CMap)[integer];)
@@ -1145,13 +1147,13 @@ void pathCounter::assignTaint(Value *Dest, Value *Src, char taintType)
 	}
 	auto destTaint = updateTaint(Dest);
 	(*TMap)[Dest] = destTaint;
-	std::cerr << taintType << (*TMap)[Dest] << " = " << taintType << srcTaint << std::endl;
-	// for every assignment statement, if source is a symPtr
-	// create destination as symPtr as well.
-	if(taintType == 'p' && (std::find(symPtr.begin(), symPtr.end(), srcTaint) != symPtr.end() ) ){
-		std::cerr << 'i' << (*TMap)[Dest] << " = " << 'i' << srcTaint << std::endl;
+
+	if(taintType == 'i'){
+		std::cerr << "i" << (*TMap)[Dest] << " = Int('i" << (*TMap)[Dest] << "')" << std::endl;
+		std::cerr << "s.add(" << taintType << (*TMap)[Dest] << " == " << taintType << srcTaint << ")" << std::endl;
+	}else{
+		z3printPointerAndInteger( (*TMap)[Dest], srcTaint);
 	}
-//	(*TMap)[Dest] = srcTaint;
 }
 
 void pathCounter::taintInstructions()
@@ -1173,6 +1175,22 @@ void pathCounter::taintInstructions()
 	//		in function " << F->getName().data() << " total Taint Count " << taintNo-1 << std::endl;
 }
 
+void pathCounter::z3printPointerAndInteger(uint64_t lhs, uint64_t rhs)
+{
+	// create symbolic variable of lhs.
+	// add z3 assert s.add(lhs == rhs)
+	std::cerr << "p" << lhs << "=Int('p" << lhs << "')" << std::endl;
+	std::cerr << "s.add(p" << lhs << "==p" << rhs << ")" << std::endl;
+
+	if( (std::find(symPtr.begin(), symPtr.end(), rhs) != symPtr.end() ) ){
+		std::cerr << 'i' << lhs << "=Int('i"
+			<< lhs << "')" << std::endl; 
+		std::cerr << "s.add(i" << lhs << "==i"
+			<< rhs << ")" << std::endl;
+	}
+	std::cerr << "#" << __func__ << ":end" << std::endl;
+}
+
 void pathCounter::taintInstructions(BasicBlock *B)
 {
 	std::cerr << "#" << __func__ << "()" << std::endl;
@@ -1184,17 +1202,17 @@ void pathCounter::taintInstructions(BasicBlock *B)
 			std::string callFunctionName(CI->getCalledFunction()->getName().data());
 			if(callFunctionName.find("_mark") != std::string::npos){
 				auto taintType = CI->getCalledFunction()->getReturnType()->isPointerTy() ? 'p' : 'i';
-				std::cerr << taintType << (*TMap)[&I] 
-					<< "=" << taintType << (*TMap)[CI->getOperand(0)] << std::endl;
+				if(taintType == 'i'){
+					std::cerr << taintType << (*TMap)[&I] 
+						<< "=" << taintType << (*TMap)[CI->getOperand(0)] << std::endl;
+				}
 				// if taint Type is pointer to array, create a variable equivalent for
 				// the pointer to the array
 				if(taintType == 'p'){
-					std::cerr << 'i' << (*TMap)[&I]
-					<< "=" << taintType << (*TMap)[CI->getOperand(0)] << std::endl;
-				}
-				// CI return also added as a symPtr
-				if(taintType == 'p')
+					z3printPointerAndInteger( (*TMap)[&I] , (*TMap)[CI->getOperand(0)] );
+									// CI return also added as a symPtr
 					symPtr.push_back((*TMap)[&I]);
+				}
 			}
 		}	
 	}
@@ -1908,6 +1926,7 @@ void pathCounter::runOnStore(StoreInst *SI) {
 			std::cerr << "p" << getTaint(P) << " = Int('p" << getTaint(P) << "')" << std::endl;
 			// Pointer variable remains same, only value got updated
 			std::cerr << "s.add(p" << getTaint(P) << " == p" << prevPointerTaint << ")" << std::endl;
+		//	std::cerr << "s.add(i" << getTaint(P) << " == i" << prevPointerTaint << ")" << std::endl;
 		}
 	}
 }
@@ -2056,7 +2075,14 @@ void pathCounter::runOnBinary(BinaryOperator *I) {
 	auto instructionTaint = updateTaint(I);
 	assert(instructionTaint);
 	auto instructionTy = (t0Ty == 'i' && t1Ty == 'i') ? 'i' : 'p';
-	std::cerr  <<  instructionTy << instructionTaint << " = "<< t0Ty << t0  << getSymbol(I->getOpcodeName())  << " " << t1Ty << t1 << std::endl;
+	if(instructionTy == 'i'){ 
+		std::cerr  <<  instructionTy << instructionTaint << " = "<< t0Ty 
+		<< t0  << getSymbol(I->getOpcodeName())  << " " << t1Ty << t1 << std::endl;
+	}else{
+		std::cerr << 'p' << instructionTaint << "=Int('p" << instructionTaint << "')" << std::endl;
+		std::cerr << "s.add(p" << instructionTaint << " == " << t0Ty << t0
+		<< getSymbol(I->getOpcodeName()) << " " << t1Ty << t1 << ")" << std::endl;	
+	}
 	// if binary operation happens, and one of the operands is a symbolic pointer,
 	// the resultant pointer should also be added to symPtr vector
 	if((t0Ty == 'p' && std::find(symPtr.begin(),symPtr.end(),t0) != symPtr.end()) ||
@@ -2124,7 +2150,8 @@ void pathCounter::runOnGetElementPtr(GetElementPtrInst *I) {
 			std::cerr << "namei" << IndexTaintNo << "= get_var_name(i" << IndexTaintNo << "=i" << IndexTaintNo << ")" << std::endl;
 			std::cerr << "i" << instructionTaint << " = getElement(p" << arrTaint << ",i" << IndexTaintNo 
 				<< ",namep" << arrTaint << ",namei" << IndexTaintNo << ")" << std::endl;
-			std::cerr << "p" << instructionTaint << " = p" << arrTaint  << " + i" << IndexTaintNo  << std::endl;
+			std::cerr << "p" << instructionTaint << " = Int('p" << instructionTaint << "')" << std::endl;
+			std::cerr << "s.add(p" << instructionTaint << " == p" << arrTaint  << " + i" << IndexTaintNo << ")" << std::endl;
 			// pointer address is computed using symbolic pointer 
 			// variable add that variable to symPtr as well
 			// i28 = getElement(p26,i27)

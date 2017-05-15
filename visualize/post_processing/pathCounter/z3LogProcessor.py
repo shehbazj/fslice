@@ -35,14 +35,10 @@ def generateIndexConstraints(count):
     elementList = arrElements[count]
     indexConstraintString = '' 
     indexList = indexes[count]
-    for i in range(len(objList)):
-        for j in range(i + 1, len(objList)):
-            indexConstraintString += ( "s.add(Implies(" + indexList[i][0] + " == " + indexList[j][0] + "," + objList[i][0] + " == " + objList[j][0] + "))\n" )
-
-    # TODO getElement returns integer value which is 1 more than index value.
-    # currently we write an Implication of the form
-    # Implies( pXX + iXX == pYY + iYY, iXX+1 == iYY+1 )
-    # we need a way to derive YY index directly
+    
+  #  for i in range(len(objList)):
+  #      for j in range(i + 1, len(objList)):
+  #          indexConstraintString += ( "s.add(Implies(" + indexList[i][0] + " == " + indexList[j][0] + "," + objList[i][0] + " == " + objList[j][0] + "))\n" )
 
     for i in range(len(objList)):
         for j in range(i + 1, len(objList)):
@@ -150,16 +146,16 @@ def process(line, offList, arrList):
         return None
     lhs = line.split("=")[0].rstrip()
     rhs = line.split("=")[1].rstrip()
-    for idx in offList:
-        if lhs == idx:
-            line += ( "indexCheck("+ lhs + "," + rhs + ", get_var_name("+ lhs + "=" + lhs + "))\n" )
-            return line
-    for arrPtr in arrList:
-        if lhs == arrPtr[0]:
-            newline = ''
-            newline += ( arrPtr[0] + "= Int('" + arrPtr[0] + "')\n" )
-            newline += ( "s.add(" + arrPtr[0] + " == " + rhs + ")\n" )
-            return newline
+#    for idx in offList:
+#        if lhs == idx:
+#            line += ( "indexCheck("+ lhs + "," + rhs + ", get_var_name("+ lhs + "=" + lhs + "))\n" )
+#            return line
+#    for arrPtr in arrList:
+#        if lhs == arrPtr[0]:
+#            newline = ''
+#            newline += ( arrPtr[0] + "= Int('" + arrPtr[0] + "')\n" )
+#            newline += ( "s.add(" + arrPtr[0] + " == " + rhs + ")\n" )
+#            return newline
     return None
 
 if __name__ == "__main__":
