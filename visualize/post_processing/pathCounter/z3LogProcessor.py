@@ -29,26 +29,84 @@ arrElements = defaultdict(list)
 
 indexes = defaultdict(list)
 
+# p_scanned_taints and i_scanned_taints store all initialized
+# pXX and iXX taints that we encounter in the trace file.
+# we use these two data structures to build rwList - which is 
+# a log of all READ and WRITE taints that have both integer and
+# pointer values.
 
-def generateIndexConstraints(count):
-    objList = arrObjects[count]
-    elementList = arrElements[count]
-    indexConstraintString = '' 
-    indexList = indexes[count]
-    
-  #  for i in range(len(objList)):
-  #      for j in range(i + 1, len(objList)):
-  #          indexConstraintString += ( "s.add(Implies(" + indexList[i][0] + " == " + indexList[j][0] + "," + objList[i][0] + " == " + objList[j][0] + "))\n" )
+p_scanned_taints = []
+i_scanned_taints = []
+rwList = []
 
-    for i in range(len(objList)):
-        for j in range(i + 1, len(objList)):
-            inextIndex = elementList[i]
-            jnextIndex = elementList[j]
-            indexConstraintString += ( "s.add(Implies(" + objList[i][0] + " + " + indexList[i][0] + " == " + objList[j][0] + " + " + indexList[j][0]
-                                    + ", " + inextIndex + " == " + jnextIndex + "))\n" )
+def generatePointerConstraints(count):
+    # read rw file
+    # if READ or WRITE happens for i
+    # if p exists for i
+    # add to rwList
 
-    return indexConstraintString
+    retStr = ''
+    _wList = [] 
+    for i in range(1 , len(rwList)):
+        elem1 = rwList[i]
+        if 'w' in elem1:
+            continue
+        else:
+            _wList = []
+            elem1Taint = elem1.split("r")[1].rstrip()
+            for j in reversed(range(0, i)):
+                elem2 = rwList[j]
+                print "elem1 = ", elem1, "elem2 = ", elem2
+                if 'w' in elem2:
+                    elem2Taint = elem2.split("w")[1].rstrip()
+                    _wList.append(elem2Taint)
+                    # if W1 W2 R3 happened, R3 == W2 implies elem_read3 == elem_write2
+                    # if W1 W2 R3 happened, R3 != W2 && R3 == W1 implies elem_read3 == elem_write1
+                    # elem2 is being added in reversed order of writes. i.e. W2 added first, W1 appended later
+                    # so we scan _wList from bottom to top, comparing each element pointer with elem1
+                    # and negating all intermediate write pointer positions
+                    writeString = ''
+                    AndStr = ''
+                    AndTerm = ''
+                    for wElem in reversed(range(0,len(_wList) - 1)):
+                        wElemTaint = _wList[wElem]
+                        writeString += ( ", p" + elem1Taint + " != p" + wElemTaint )
+                        AndStr = "And("
+                        AndTerm = ")"
+                    string = "s.add(Implies(" + AndStr + " p" + elem1Taint + " == p" + elem2Taint + writeString + AndTerm + ", i" + elem1Taint + " == i" + elem2Taint + "))"
+                    retStr += (string + "\n")
+                        
+                else:
+                # XXX use _wList
+                    elem2Taint = elem2.split("r")[1].rstrip()
+                    writeString = ''
+                    AndStr = ''
+                    AndTerm = ''
+                    for wElem in range(len(_wList)):
+                        AndStr = "And("
+                        AndTerm = ")"
+                        writeString += (", p" + elem1Taint + " != p" + _wList[wElem] )
+                    string = "s.add(Implies(" + AndStr +" p" + elem1Taint + " == p" + elem2Taint + writeString + AndTerm + ", i" + elem1Taint + " == i" + elem2Taint + "))"
+                    retStr += (string + "\n")
+    return retStr                      
+                
 
+    # for each element in rwList starting from element 2::
+    # write prev List = []
+    # for each prev element::
+    # if element is read, for each prev element
+    # if prev element is read, 
+    # p_current == p_prev ==> elem_current == elem_prev_read
+    # if prev element is write, add to write list
+    # when a read is encountered,
+    # p_current != write_p1 && p_current != write_p2
+    # && p_current == p_prev_read => elem_current == elem_prev_read
+
+    #rwFile = "TEST" + count + ".rw"
+    #rwlist = tuple(open(rwFile, 'r'))
+    #for line in rwlist:
+                        
+ 
 def getOffsetTaints():
     count=0
     offsetList = []
@@ -146,16 +204,19 @@ def process(line, offList, arrList):
         return None
     lhs = line.split("=")[0].rstrip()
     rhs = line.split("=")[1].rstrip()
-#    for idx in offList:
-#        if lhs == idx:
-#            line += ( "indexCheck("+ lhs + "," + rhs + ", get_var_name("+ lhs + "=" + lhs + "))\n" )
-#            return line
-#    for arrPtr in arrList:
-#        if lhs == arrPtr[0]:
-#            newline = ''
-#            newline += ( arrPtr[0] + "= Int('" + arrPtr[0] + "')\n" )
-#            newline += ( "s.add(" + arrPtr[0] + " == " + rhs + ")\n" )
-#            return newline
+    if "name" in lhs:
+        return None
+    if 'i' in lhs:
+        i_scanned_taints.append(lhs.split("i")[1])
+    elif 'p' in lhs:
+        p_scanned_taints.append(lhs.split("p")[1])
+    else:
+        print "ERROR, found ", lhs
+    
+    if "getElement" in rhs:
+        elementIndex = rhs.split(",")[1].rstrip()
+        line += ( "indexCheck("+ elementIndex + ",get_var_name("+ elementIndex + "=" + elementIndex + "))\n")
+        return line
     return None
 
 if __name__ == "__main__":
@@ -177,26 +238,64 @@ if __name__ == "__main__":
     count=0
     for line in lines:
         if "GETMODEL" in line:
+            print "TEST" , str(count) 
             fName = "TEST"+str(count) + ".py"
             textFile = open(fName, "w")
             textFile.write(header)
             textFile.write(currentLine)
-            indexConstraintString = generateIndexConstraints(count)
-            textFile.write(indexConstraintString)
+            pointerConstraintString = generatePointerConstraints(count)
+            textFile.write(pointerConstraintString)
             textFile.write(footer)
             textFile.close()
             count +=1
             currentLine = ""
+#            print "ISCANNED TAINTS ",i_scanned_taints
+#            print "PSCANNED TAINTS ",p_scanned_taints
+            print "RWList TAINTS ",rwList
+            p_scanned_taints = []
+            i_scanned_taints = []
+            rwList = []
+            # truncate already existing rw file
+            with open("TEST"+str(count)+".rw", "w"):
+                pass
             continue
         else:
-            #if count is not 0 and line[0] is not '#':
+            # .rw file contains all taints that were read
+            # corresponding to load operation or written
+            # corresponding to store operation
+            if "READ i" in line or "WRITE i" in line:
+                if "READ" in line:
+                    action = 'r'
+                else:
+                    action = 'w'
+                taintVal = line.split("i ")[1].rstrip()
+                #print "taintVal = ", taintVal
+                if taintVal in i_scanned_taints and taintVal in p_scanned_taints:
+                    rwList.append(action + taintVal)
+                    fName = "TEST"+str(count) + ".rw"
+                    textFile = open(fName, "a")
+                    textFile.write(line)
+                    textFile.close()
+                #else:
+                #    print "taintVal ", taintVal , " not in ISCANNED ", i_scanned_taints, " or ", " PSCANNED ", p_scanned_taints
             if count is not 0:
                 processedLine = process(line, offsets[count], arrObjects[count])
                 if processedLine is None:
                     currentLine += line
                 else:
                     currentLine += processedLine
+
+
     for c1 in range (1, count):
         fname = "TEST"+str(c1)+".py"
         print "TEST"+str(c1)
+        outName = "TEST"+str(c1)+".res"
+        rwLog = "TEST"+str(c1)+".rw"
+
+#       run TEST1.py and output to TEST1.res
+        sys.stdout = open(outName, "w")
         execfile(fname)
+
+#       run arrayGenerator.py with argument TEST1.res TEST1.rw
+        sys.stdout = sys.__stdout__
+        subprocess.call( ["python", 'arrayGenerator.py' , outName , rwLog ] );

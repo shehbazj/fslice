@@ -10,19 +10,20 @@ def get_var_name(**kwargs): return kwargs.keys()[0]
 
 
 
-def getElement(arr , idx, name1, name2):
+def getElement(arr , idx, name1, name2, name3):
     #if type(idx) is int:
     #    return arr[idx]
-    name = name1+name2
-    symVar = Int(name)
+#    name = name1+name2
+#    symVar = Int(name)
+    symVar = Int(name3)
     return symVar
 
-def indexCheck(lhs, rhs, lhsName):
+def indexCheck(lhs, lhsName):
     #if type(lhs) is int:
     #    return ''
     #else:
     lhs  = Int(lhsName)
-    s.add(lhs ==rhs)
+    #s.add(lhs ==rhs)
     s.add(lhs >= 0)
 
 def getZ3VariableFromString(s, varString):
