@@ -16,59 +16,23 @@
 
 #include"sym.h"
 
-int A(int y)
-{
-//	int y = 30 + x;
-//	if (x ==5 ){
-//		y = x * 10;
-//	}else{
-//		y = x - 5;
-//	}
-	return y;
-}
-
 /*
-int B(int x)
-{
-	int c = 10 + x;
-	return c;
-}
+ * TESTCASE 14 - function call with if-else
+ * TESTCASE 6 - multiple calls to same function call with return value
 */
 
-//int C(int x){
-//	if (x == 0){
-//		return 1;
-//	}else{
-//		return 1 + C(x-1);
-//	}
-//}
-/*
-int B(int x)
+int C(int y)
 {
-	x = A(x);
-	if(x < 10){
-		x--;
+	if(y < 20){
+		return y+=20;
 	}else{
-		x++;
+		return y-=20;
 	}
-	x = C(x);
-	return A(x);
 }
-*/
+
 int main()
 {
 	int p = _mark_int(p);	
-	int x;
-	x = A(p);
-	if (x == 10){
-		;
-	}
-//	int y = B(30);
-//	int z = C(40);
+	int x = C(p);
 	return 0;
 }
-
-/* solution
- * 10 
- * 11
- * */

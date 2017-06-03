@@ -9,66 +9,29 @@
  * TESTCASE 9 - pointer argument
  * TESTCASE 10 - return pointer
  * TESTCASE 11 - function call with loops
- * TESTCASE 12 - function call inside a condition
- * TESTCASE 13 - function call inside a loop
- * TESTCASE 14 - function call with if-else
  * */
 
 #include"sym.h"
 
-int A(int y)
+// * TESTCASE 4 - without return value
+// * TESTCASE 5 - multiple calls to same function call - no return value
+
+void A(int y)
 {
-//	int y = 30 + x;
-//	if (x ==5 ){
-//		y = x * 10;
-//	}else{
-//		y = x - 5;
-//	}
-	return y;
+	//y += 20;
+	return ;
 }
 
-/*
-int B(int x)
-{
-	int c = 10 + x;
-	return c;
-}
-*/
-
-//int C(int x){
-//	if (x == 0){
-//		return 1;
-//	}else{
-//		return 1 + C(x-1);
-//	}
-//}
-/*
-int B(int x)
-{
-	x = A(x);
-	if(x < 10){
-		x--;
-	}else{
-		x++;
-	}
-	x = C(x);
-	return A(x);
-}
-*/
 int main()
 {
 	int p = _mark_int(p);	
-	int x;
-	x = A(p);
-	if (x == 10){
+	A(p);
+	int x = 25;
+	x += p;
+	x -= 32;
+	if(x == 0){
 		;
 	}
-//	int y = B(30);
-//	int z = C(40);
+	A(x);
 	return 0;
 }
-
-/* solution
- * 10 
- * 11
- * */

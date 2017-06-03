@@ -17,3 +17,8 @@ int main()
 	}
 	return 0;
 }
+/* unsat
+ * 0
+ * 1
+ * unsat
+ * */

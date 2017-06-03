@@ -15,3 +15,8 @@ int main()
 	y = x;
 	return 0;
 }
+/* 1
+ * 0
+ * unsat
+ * without loop extension
+ * */

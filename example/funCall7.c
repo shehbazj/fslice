@@ -8,10 +8,6 @@
  * TESTCASE 8 - recursion <TERMINATE!>
  * TESTCASE 9 - pointer argument
  * TESTCASE 10 - return pointer
- * TESTCASE 11 - function call with loops
- * TESTCASE 12 - function call inside a condition
- * TESTCASE 13 - function call inside a loop
- * TESTCASE 14 - function call with if-else
  * */
 
 #include"sym.h"
@@ -67,8 +63,3 @@ int main()
 //	int z = C(40);
 	return 0;
 }
-
-/* solution
- * 10 
- * 11
- * */

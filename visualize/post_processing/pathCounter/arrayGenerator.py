@@ -25,6 +25,7 @@ MAXOFFSET = 15
 values = defaultdict(list)
 arr = [-9999] * MAXOFFSET
 writeOffsets = [ False ] * MAXOFFSET
+printArray = False
 #arrList = list()
 #arrAddrList = defaultdict(list)
 
@@ -39,6 +40,9 @@ if __name__ == "__main__":
         if 'unsat' in line:
             print "unsat"
             sys.exit()
+        if '=' not in line:
+            continue
+            print "ERROR: arrayGenerator called with ", line
         lhs = line.split('=')[0].strip()
         if '[' in lhs:
             lhs = lhs.split('[')[1]
@@ -84,6 +88,12 @@ if __name__ == "__main__":
     for idx in range(len(arr)):
         if arr[idx]  == -9999:
             arr[idx] = '*'
+        else:
+            printArray = True
 
-    print arr
+    if printArray:
+        print arr
+    else:
+        with open(sys.argv[1], 'r') as fin:
+            print fin.read()
 #    print values
