@@ -36,6 +36,22 @@ using namespace llvm;
 #  define D(x)
 #endif
 
+#ifdef DEBUG_ENUMERATE
+#  define DE(x) x
+#else
+#  define DE(x)
+#endif
+
+#ifdef DEBUG_TAINT
+#  define DT(x) x
+#else
+#  define DT(x)
+#endif
+
+
+
+
+
 struct Taint {
   uint64_t id:32;
   uint64_t offset:31;	// S.J. number of bytes following the address that 
@@ -1511,7 +1527,10 @@ uint64_t pathCounter :: queryPP(BasicBlock *BB, std::map<std::string, uint64_t> 
 	std::string s(functionName);
 	s += ":";
 	s += currentBBName;
-	assert(GbbMap->find(s) != GbbMap->end());
+	if(GbbMap->find(s) != GbbMap->end()){
+		std::cerr << "Did not find " << s << " in GbbMap " << std::endl;
+		assert(GbbMap->find(s) != GbbMap->end());
+	}
 	return (*GbbMap)[s];
 }
 
@@ -1591,7 +1610,7 @@ void pathCounter :: processFunctionEntryBlock(BasicBlock *B)
 			std::cerr << "#" << __func__ << "(): scanning arg = " << count << std::endl;
 			uint64_t TA = getTaint(&A);
 			if (TA == 0) {
-				D(std::cerr << "taint argument " << count << " argTaintSize = " << g_argumentTaints.size() << std::endl;)
+				std::cerr << "taint argument " << count << " argTaintSize = " << g_argumentTaints.size() << std::endl;
 				std::cerr << "#" << __func__ << "(): taints assigned " << g_argumentTaints[count] << std::endl;
 				(*TMap)[&A] = g_argumentTaints[count++]; 
 			}/*else{
@@ -1652,8 +1671,8 @@ bool pathCounter::isSolvable(BasicBlock *nextBB)
 bool pathCounter :: updateReturnPath()
 {
 	if(pathContext.find("&") == std::string::npos){
-		std::cerr << __func__ << "#" << "ERROR\nPATHCONTEXT " <<  pathContext << "\nCALLED update Return on path"
-		<< " not containing & sign " << std::endl;
+		DE(std::cerr << __func__ << "#" << "ERROR\nPATHCONTEXT " <<  pathContext << "\nCALLED update Return on path"
+		<< " not containing & sign " << std::endl;)
 		return false;
 	}
 	std::string traversedPath = pathContext.substr(0, pathContext.find("&"));
@@ -1667,17 +1686,12 @@ bool pathCounter :: updateReturnPath()
 		newPath += newLeftPath;
 	}
 	pathContext = newPath;
-	std::cerr << __func__ << "(): new pathContext = " << pathContext << std::endl;
+	DE(std::cerr << __func__ << "(): new pathContext = " << pathContext << std::endl;)
 	return true;
 }
 
 void pathCounter :: updatePathContext(BasicBlock *currentBB){
-	std::cerr << "#" << __func__ << "(): before pathContext = " << pathContext << std::endl;
-//	std::string tokenToAdd = std::string(currentBB->getParent()->getName().data()) + "-" + std::string(currentBB->getName().data());
-//	if(pathContext.find(tokenToAdd) != std::string::npos){
-//		std::cerr << "#" << __func__ << "(): path not updated " << pathContext << std::endl;
-//		return;
-//	}
+	DE(std::cerr << "#" << __func__ << "(): before pathContext = " << pathContext << std::endl;)
 	if(pathContext.find("&") == std::string::npos){
 		pathContext += ":";
 		pathContext += currentBB->getParent()->getName().data();
@@ -1693,7 +1707,7 @@ void pathCounter :: updatePathContext(BasicBlock *currentBB){
 		newPath += pathContext.substr(pathContext.find("&") + 1);
 		pathContext = newPath;
 	}
-	std::cerr << "#" << __func__ << "(): after pathContext = " << pathContext << std::endl;
+	DE(std::cerr << "#" << __func__ << "(): after pathContext = " << pathContext << std::endl;)
 }
 
 // saves current pathContext + currentBB.getName() to scheduler
@@ -1747,14 +1761,14 @@ BasicBlock* pathCounter::getNextMaxBB(BasicBlock *currentBB, std::map<std::strin
 	uint64_t schedulerMaxPP = 0;
 	if(!Scheduler.empty()){
 		schedulerMaxPP = Scheduler.top().pathPotential;
-		std::cout << __func__ << "():picked up scheduler element " << Scheduler.top().path << std::endl;
+		DE(std::cout << __func__ << "():picked up scheduler element " << Scheduler.top().path << std::endl;)
 	}else{
-		std::cerr << __func__ << "():scheduler is empty " << std::endl;
+		DE(std::cerr << __func__ << "():scheduler is empty " << std::endl;)
 	}
 
 	const char* alternateBBName = isLoopBack(currentBB);
 	if(alternateBBName != nullptr){
-		std::cerr << __func__ << "(): LOOP DETECTED " << std::endl;
+		DE(std::cerr << __func__ << "(): LOOP DETECTED " << std::endl;)
 		D(std::cerr << __func__ << "(): return block with less PP " << std::endl;)
 		auto alternateBB = getAlternateBB(currentBB, alternateBBName);
 		D(std::cerr << __func__ << "(): block returned " << alternateBB->getName().data() << std::endl;)
@@ -1762,30 +1776,30 @@ BasicBlock* pathCounter::getNextMaxBB(BasicBlock *currentBB, std::map<std::strin
 		return alternateBB;
 	}
 
-	std::cerr << "#" << __func__ << "():number of successors = " << numSuccessors << std::endl;
-	std::cerr << "#" << __func__ << "():pathContext = " << pathContext << std::endl;
+	DE(std::cerr << "#" << __func__ << "():number of successors = " << numSuccessors << std::endl;
+	std::cerr << "#" << __func__ << "():pathContext = " << pathContext << std::endl;)
 	
 	// choose max child, save state of other children
 	for(unsigned i=1; i < numSuccessors ; i++){
 		BasicBlock* nextChildBB = currentBB->getTerminator()->getSuccessor(i);
 		uint64_t nextChildBBPP = queryPP(nextChildBB, GbbMap);
 		if(nextChildBBPP > maxChildBBPP ){ // save less PP context
-			std::cerr << __func__ << "():saving max child " << maxChildBB->getName().data() << std::endl;
+			DE(std::cerr << __func__ << "():saving max child " << maxChildBB->getName().data() << std::endl;)
 			if(isSolvable(maxChildBB)){
 				saveContext(maxChildBB, GbbMap);
 			}
 			maxChildBB = nextChildBB;
 			maxChildBBPP = nextChildBBPP;
 		}else{
-			std::cerr << __func__ << "():saving next child " << nextChildBB->getName().data() << std::endl;
+			DE(std::cerr << __func__ << "():saving next child " << nextChildBB->getName().data() << std::endl;)
 			if(isSolvable(nextChildBB)){
 				saveContext(nextChildBB, GbbMap);
 			}
 		}
 	}
-	std::cerr << __func__ << "():child having max path potential " << maxChildBB->getName().data() << std::endl;
+	DE(std::cerr << __func__ << "():child having max path potential " << maxChildBB->getName().data() << std::endl;
 	std::cerr << __func__ << "(): path Context " <<pathContext << std::endl;
-	std::cerr << __func__ << "(): max Child " << maxChildBB->getName().data() << std::endl; 
+	std::cerr << __func__ << "(): max Child " << maxChildBB->getName().data() << std::endl; )
 	// if max child is greater than scheduler max, or scheduler is empty,
 	// continue. else save max child, load scheduler top
 
@@ -1803,7 +1817,7 @@ BasicBlock* pathCounter::getNextMaxBB(BasicBlock *currentBB, std::map<std::strin
 		D(std::cerr << __func__ << "():no update from scheduler " << currentBB->getName().data() << std::endl;)
 		updatePathContext(maxChildBB);
 	}
-	std::cerr << __func__ << "(): path Context " << pathContext << std::endl;
+	DE(std::cerr << __func__ << "(): path Context " << pathContext << std::endl;)
 	D(std::cerr << __func__ << "(): max Child " << maxChildBB->getName().data() << std::endl;)
 	return maxChildBB;
 }
@@ -1819,9 +1833,6 @@ void pathCounter :: getModel()
 		std::cerr << __func__ << "null value allocated" << std::endl;
 
 	solve();
-//	for(auto it = MarkedTaints.begin() ; it!=MarkedTaints.end() ; it++){
-//		std::cerr << "#MARKED " << *it << std::endl;
-//	}
 	MarkedTaints.clear();
 	delete TMap;
 	delete CMap;
@@ -1843,7 +1854,7 @@ BasicBlock* pathCounter :: loadContext()
 		pathContext = nextContext.path;
 		// context saved as f1:bb1-f1:bb2-f2:bb1
 	
-		std::cerr << "#" << __func__ << "(): pathContext = " << pathContext << std::endl;
+		DE(std::cerr << "#" << __func__ << "(): pathContext = " << pathContext << std::endl;)
 		std::string bbDelimiter = ":";
 	        std::string funDelimiter = "-";
 	        int lastIndex;
@@ -1856,9 +1867,9 @@ BasicBlock* pathCounter :: loadContext()
 	        std::string lastFunName = lastBB.substr(0, lastIndex);
 	        lastBB = lastBB.substr(lastIndex+1, lastBB.length());
 		
-		std::cerr << "#" << __func__ << "():loading path " << pathContext << std::endl;
+		DE(std::cerr << "#" << __func__ << "():loading path " << pathContext << std::endl;
 		std::cerr << "#" << __func__ << "():last Basic Block received " << lastBB << std::endl;
-		std::cerr << "#" << __func__ << "():last function name " << lastFunName << std::endl;
+		std::cerr << "#" << __func__ << "():last function name " << lastFunName << std::endl;)
 
 		assert(Scheduler.size() == prevSize - 1);	// should have removed 1 element
 
@@ -2127,7 +2138,7 @@ bool pathCounter:: expansionLeft(BasicBlock *B)
 	auto traversedPath = pathContext.substr(0, pathContext.find("&"));
 
 	size_t callsMade = 0;
-	std::cerr << __func__ << "(): tokenName = " << tokenName << std::endl;
+	DE(std::cerr << __func__ << "(): tokenName = " << tokenName << std::endl;)
     	size_t nPos = pathContext.find(tokenName, 0); // fist occurrence
 	while(nPos != std::string::npos)
     	{
@@ -2147,7 +2158,7 @@ bool pathCounter:: expansionLeft(BasicBlock *B)
 		}
 	}
 	
-	std::cerr << "Calls Already made = " << callsMade << " number of Calls = " << numCalls << std::endl;
+	DE(std::cerr << "Calls Already made = " << callsMade << " number of Calls = " << numCalls << std::endl;)
 
 	if(callsMade < numCalls){
 		return true;
@@ -2170,7 +2181,7 @@ BasicBlock * pathCounter:: expandPath(BasicBlock *B)
 	std::vector <std::string> traversedPathTokens = tokenize(traversedPath);
 	int callCount = 0;
 
-	std::cerr << __func__ << "():pathContext = " << pathContext << std::endl;
+	DE(std::cerr << __func__ << "():pathContext = " << pathContext << std::endl;)
 	for(auto token = traversedPathTokens.begin() ; token != traversedPathTokens.end(); token++){
 		callTokenName += std::to_string(callCount);
 		if ( token->find(callTokenName) != std::string::npos){
@@ -2178,7 +2189,7 @@ BasicBlock * pathCounter:: expandPath(BasicBlock *B)
 		}	
 	}	
 	
-	std::cerr << __func__ << "()callCount = " << callCount << std::endl;
+	DE(std::cerr << __func__ << "()callCount = " << callCount << std::endl;)
 
 	// get called function for callCount + 1 th call
 	int counter = 0;
@@ -2196,8 +2207,8 @@ BasicBlock * pathCounter:: expandPath(BasicBlock *B)
 		}
 	}
 
-	std::cerr << __func__ << "()counter = " << counter << std::endl;
-	std::cerr << __func__ << "()calledFunction = " << calledFunction << std::endl;
+	DE(std::cerr << __func__ << "()counter = " << counter << std::endl;
+	std::cerr << __func__ << "()calledFunction = " << calledFunction << std::endl;)
 	
 	// update pathContext
 	std::string calledFunctionToken = std::string(":") + B->getParent()->getName().data() + std::string("-") 
@@ -2214,14 +2225,14 @@ BasicBlock * pathCounter:: expandPath(BasicBlock *B)
 	newPathContext += calledFunctionToken;
 	newPathContext += "&";
 	newPathContext += returnFunctionToken;
-	std::cerr<< "trailing String = " << trailingString << std::endl;
+	DE(std::cerr<< "trailing String = " << trailingString << std::endl;)
 	if(!trailingString.empty()){
 		newPathContext += ":";
 		newPathContext += trailingString;
 	}	
 	pathContext = newPathContext;
 
-	std::cerr << __func__ << "()updated path context = " << pathContext << std::endl;
+	DE(std::cerr << __func__ << "()updated path context = " << pathContext << std::endl;)
 	// return called Function entry basic block
 	return calledFunctionEntryBB;					
 }
@@ -2235,17 +2246,13 @@ BasicBlock * pathCounter:: expandPath(BasicBlock *B)
 bool pathCounter :: isTerminator(BasicBlock *B)
 {
 	auto I = B->getTerminator();
-	auto funName = B->getParent()->getName().data();
+	DE(auto funName = B->getParent()->getName().data();)
 	ReturnInst *RI = dyn_cast<ReturnInst>(I);
 	if(RI != nullptr){
-		//if(!strcmp(funName,"main")){
-			std::cerr << __func__ << "():TERMINATING " << funName << " BB Name = " << B->getName().data() << std::endl; 
-			return true;
-		//}
-		//std::cerr << __func__ << "():NOT-TERMINATING " << funName << " BB Name = " << B->getName().data() << std::endl; 
-		//return false;
+		DE(std::cerr << __func__ << "():TERMINATING " << funName << " BB Name = " << B->getName().data() << std::endl; )
+		return true;
 	}else{
-		std::cerr << __func__ << "():NOT-TERMINATING " << funName << "(): BBNAME = " << B->getName().data() << std::endl; 
+		DE(std::cerr << __func__ << "():NOT-TERMINATING " << funName << "(): BBNAME = " << B->getName().data() << std::endl; )
 		return false;
 	}
 }
@@ -2256,21 +2263,10 @@ bool pathCounter :: isTerminator(BasicBlock *B)
 
 BasicBlock * pathCounter :: callerBasicBlock()
 {
-//	if(pathContext.find("&") == std::string::npos){
-//		std::cerr << __func__ << "(): WARNING\nPATH CONTEXT: " << pathContext << "\nDOES NOT CONTAIN RETURNING (CALLER) BASIC BLOCK." << std::endl;
-//		return nullptr;
-//		assert(0);
-//	}
 	std::string traversedPath = pathContext.substr(0,pathContext.find("&"));
 	std::string nextToken = traversedPath.substr(traversedPath.rfind(":")+ 1);
 	assert(nextToken.find("ret") != std::string::npos);
-//	std::string newPathContext = pathContext.substr(0, pathContext.find("&"));	
-//	newPathContext += nextToken;
-//	std::string leftPath = pathContext.substr(pathContext.find("&") + 1);
-//	std::string newLeftPath = leftPath.substr(leftPath.find(":")+1);
-//	newPathContext += newLeftPath;
-//	pathContext = newPathContext;
-	
+
 	std::string nextFunction = nextToken.substr(0, nextToken.find("-"));
 	std::string restOfToken = nextToken.substr(nextToken.find("-") + 1);
 	std::string nextBB = restOfToken.substr(0, restOfToken.find("#"));
@@ -2281,8 +2277,8 @@ BasicBlock * pathCounter :: callerBasicBlock()
 			return &BB;
 		}			
 	}
-	std::cerr << __func__ << "(): WARNING \nPATH CONTEXT = " << pathContext << "\nBB NAME = " << nextBB << "\nCOULD NOT FIND BB IN FUNCTION NAME " << nextFunction
- << std::endl;
+	DE(std::cerr << __func__ << "(): WARNING \nPATH CONTEXT = " << pathContext << "\nBB NAME = " << nextBB << "\nCOULD NOT FIND BB IN FUNCTION NAME " << nextFunction
+ << std::endl;)
 	//return nullptr;
 	assert(0);
 }
@@ -2296,44 +2292,44 @@ BasicBlock * pathCounter :: callerBasicBlock()
 void pathCounter::enumeratePaths(std::map<std::string, uint64_t > *GbbMap, BasicBlock *currentBB)
 {
 	while(!Scheduler.empty() || currentBB != nullptr){
-		std::cerr << "---------" << "ENUMERATION START ------------- " << std::endl;
+		DE(std::cerr << "---------" << "ENUMERATION START ------------- " << std::endl;)
 		if(currentBB == nullptr){
-			std::cerr << __func__ << "():currentBB is NULL" << std::endl;
-			std::cerr << __func__ << "():loading context" << std::endl;
+			DE(std::cerr << __func__ << "():currentBB is NULL" << std::endl;
+			std::cerr << __func__ << "():loading context" << std::endl;)
 			currentBB = loadContext();
 			continue;
 		}
 		if(expansionLeft(currentBB)){
 			// returns entry of called function
-			std::cerr << __func__ << "(): expanding" << std::endl;
+			DE(std::cerr << __func__ << "(): expanding" << std::endl;)
 			currentBB = expandPath(currentBB);
 		}else{
-			std::cerr << __func__ << "(): no expansion required for BB " << currentBB->getName().data() << std::endl;
+			DE(std::cerr << __func__ << "(): no expansion required for BB " << currentBB->getName().data() << std::endl;)
 			if(currentBB->getTerminator()->getNumSuccessors() == 0){
 				if(isTerminator(currentBB)){
-					std::cerr << __func__ << "():terminating" << std::endl;
+					DE(std::cerr << __func__ << "():terminating" << std::endl;)
 				//	updatePathContext(currentBB);
 					if(pathContext.find("&") == std::string::npos){	// end of main
 						getModel();
 						currentBB = loadContext();
 					}else{			// end of any other function
 						updatePathContext(currentBB);
-						std::cerr << __func__ << "():no expansion required.\n termnate block" << std::endl;
+						DE(std::cerr << __func__ << "():no expansion required.\n termnate block" << std::endl;)
 						bool status  = updateReturnPath();
 						if(status == false){
-							std::cerr << __func__ << "():DISCONTINUING" << std::endl;
+							DE(std::cerr << __func__ << "():DISCONTINUING" << std::endl;)
 							currentBB = loadContext();
 							continue;
 						}
-						std::cerr << __func__ << "(): new path context = " << pathContext << std::endl;
-						std::cerr << __func__ << "():calling caller BB" << std::endl;
+						DE(std::cerr << __func__ << "(): new path context = " << pathContext << std::endl;
+						std::cerr << __func__ << "():calling caller BB" << std::endl;)
 						// get caller basic block that called this
 						// function
 						currentBB = callerBasicBlock();
-						std::cerr << __func__ << "()caller BB = " << currentBB->getName().data() 
-							<< " function = " << currentBB->getParent()->getName().data() << std::endl; 
+						DE(std::cerr << __func__ << "()caller BB = " << currentBB->getName().data() 
+							<< " function = " << currentBB->getParent()->getName().data() << std::endl; )
 						if(currentBB == nullptr){
-							std::cerr << __func__ << "():DISCONTINUING" << std::endl;
+							DE(std::cerr << __func__ << "():DISCONTINUING" << std::endl;)
 							currentBB = loadContext();
 							continue;
 							//getModel();
@@ -2345,17 +2341,16 @@ void pathCounter::enumeratePaths(std::map<std::string, uint64_t > *GbbMap, Basic
 					currentBB = loadContext();	
 				}	
 			}else if(currentBB->getTerminator()->getNumSuccessors() == 1){
-				std::cerr << __func__ << "(): numSuccessors = 1" << std::endl;
+				DE(std::cerr << __func__ << "(): numSuccessors = 1" << std::endl;)
 				currentBB = currentBB->getTerminator()->getSuccessor(0);
 				updatePathContext(currentBB);
-				std::cerr << __func__ << "(): updated path Context = " << pathContext << std::endl;
-				std::cerr << __func__ << "(): nextBB = " << currentBB->getName().data() << std::endl;
+				DE(std::cerr << __func__ << "(): updated path Context = " << pathContext << std::endl;
+				std::cerr << __func__ << "(): nextBB = " << currentBB->getName().data() << std::endl;)
 			}else if(currentBB->getTerminator()->getNumSuccessors() >= 2){
-				std::cerr << __func__ << "(): numSuccessors = 2" << std::endl;
+				DE(std::cerr << __func__ << "(): numSuccessors = 2" << std::endl;)
 				currentBB = getNextMaxBB(currentBB, GbbMap);
-				std::cerr << __func__ << "(): nextBB = " << currentBB->getName().data() << std::endl;
-				//updatePathContext(currentBB);
-				std::cerr << __func__ << "(): updated path Context = " << pathContext << std::endl;
+				DE(std::cerr << __func__ << "(): nextBB = " << currentBB->getName().data() << std::endl;)
+				DE(std::cerr << __func__ << "(): updated path Context = " << pathContext << std::endl;)
 			}
 		}
 	}
