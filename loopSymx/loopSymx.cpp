@@ -58,12 +58,23 @@ enum operandType {
 	UNKNOWN,
 };
 
+enum operationType {
+	INCREMENT,
+	DECREMENT,
+	UNKNOWNOP,
+};
+
 // Introduces generic dynamic program slic recording into code.
 class loopSymx : public ModulePass {
 	public:
 		struct pathMeta {
 			std:: list <BasicBlock *> *bbList;
 			bool loopExists;
+		};
+
+		struct iteratorOperation {
+			enum operationType oT;
+			uint64_t operand;
 		};
 
 		loopSymx(void);
@@ -92,6 +103,7 @@ class loopSymx : public ModulePass {
 		//void markInput(Value *V, BasicBlock *BB);
 		void markInput(Value *V);
 		void addLoopPath(std::stack <BasicBlock *>);
+		void deriveIteratorProperties();
 	
 		void runOnLoad(LoadInst *LI);
 		void runOnStore(StoreInst *SI);
@@ -109,6 +121,12 @@ class loopSymx : public ModulePass {
 		void displayBBTaintMap();
 		void displayStack(std::stack <BasicBlock *> *bbStack);
 		void addLoopPath(std::stack <BasicBlock *> *bbStack);
+		BasicBlock *getLoopBackBB(std::list <BasicBlock *> *bbList);
+		Value *getIteratorLLVMValue(BasicBlock *);
+		unsigned getConstant(Value *op);
+		void updateLoopPaths();
+		uint64_t getStartValue(struct pathMeta *);
+		void getOperation(struct pathMeta *, struct iteratorOperation *);
 
 		enum operandType getOperandType(Value *V);
 		void setOperandType(Value *V, enum operandType opType);
@@ -437,14 +455,159 @@ void loopSymx:: displayStack(std::stack <BasicBlock *> *bbStack)
 	}
 }
 
-
-void deriveIteratorProperties()
+unsigned loopSymx :: getConstant(Value *op)
 {
-	// update all paths that have loop Entry blocks.
-	// go through all paths and derive iterator start, end, operation type
-	// derive loop Count if FIL. mark loop count = INPUT_DEPENDANT if IDL
+        if (ConstantInt *CI = dyn_cast<ConstantInt>(op)){
+                if(CI->getBitWidth() <=64){
+                        auto integer1 = CI->getZExtValue();
+                        return integer1;
+                }else{  
+                        std::cerr << "Found const value with size > 64" << std::endl;
+                        assert(0);
+                }
+        }else{  
+                std::cerr << "NOT CONSTANT" << std::endl;
+                assert(0);
+        }
+}
+
+// helper function to get loopBackBB from a path (basic block that occurs twice)
+
+BasicBlock * loopSymx:: getLoopBackBB(std::list <BasicBlock *> *bbList)
+{
+	for(auto it1 = bbList->begin() ; it1 != bbList->end() ; it1++){
+		for(auto it2 = std::next(it1, 1) ; it2 != bbList->end() ; it2++){
+			if ((*it1)->getName().data() == (*it2)->getName().data()){
+				std::cerr << __func__ << "(): GOT LoopBack BB " << (*it1)->getName().data() << std::endl;
+				return *it1;
+			}	
+		}
+	}
+	return nullptr;
+}
+
+// helper function get the Value of lvalue of the comparator operation in loopBackBB
+Value * loopSymx:: getIteratorLLVMValue(BasicBlock * loopBackBB)
+{
+	std::map <Value *, Value * > loadInstructionMap;
+	for(auto &I : *loopBackBB)
+	{
+		if (LoadInst *LI = dyn_cast<LoadInst>(&I)) {
+			loadInstructionMap[LI] = LI->getPointerOperand();
+		}
+		if (ICmpInst *IC = dyn_cast<ICmpInst>(&I))
+		{
+ 			auto comparedValue = IC->getOperand(0);
+			for(auto instVal : loadInstructionMap){
+				if(comparedValue == instVal.first){
+					return instVal.second;
+				}	
+			}
+		}
+	}
+	std::cerr << __func__ << "(): no comparision instruction found in basic block " << loopBackBB->getName().data() << std::endl;
+	assert(0);
+}
+
+// update all paths that have loop Entry blocks repeated twice
+// in the entire path
+
+void loopSymx :: updateLoopPaths()
+{
+	int numLoopEntries = 0;
+	for(auto loopEntryBB : loopEntryBBs) {
+		for( auto &pathStructure : pathList){
+			std::cerr << "NEW PATH " << std::endl;
+			auto path = pathStructure->bbList;
+			for(auto &pathBB : *path){
+				if(pathBB->getName().data() == loopEntryBB->getName().data()){				
+					D(std::cerr << "pathBB = " << pathBB->getName().data() << " loopEntry BB = " << loopEntryBB->getName().data() << std::endl;)
+					numLoopEntries++;
+				}
+			}	
+			if(numLoopEntries >= 2){
+				pathStructure->loopExists = true;
+			}		
+			numLoopEntries = 0;
+		}
+	}	
+}
+
+uint64_t loopSymx :: getStartValue( struct pathMeta *pathStructure)
+{
+	uint64_t startVal;
+	bool startValueAssigned = false;
+	if(pathStructure->loopExists) {
+		// START VALUE
+		BasicBlock* loopBackBB = getLoopBackBB(pathStructure->bbList);
+		assert(loopBackBB != nullptr);
+		auto itVal = getIteratorLLVMValue(loopBackBB);
+		for(auto &pathBB : *(pathStructure->bbList)) {
+			if(pathBB->getName().data() == loopBackBB->getName().data()){
+				break;
+}
+		// from entry in the loop path, check what numerical value is stored in ix
+		std::cerr << " processing " << pathBB->getName().data() << " checking value " << loopBackBB->getName().data() << std::endl;
+			for(auto &i : *pathBB){
+				if (StoreInst *SI = dyn_cast<StoreInst>(&i)) {
+					std::cerr << " detected store instruction " << std::endl;
+					auto P = SI->getPointerOperand();
+					auto V = SI->getValueOperand();
+					if ( itVal == P){
+						startVal = getConstant(V);								
+						startValueAssigned = true;
+					}	
+				}
+			}
+		}
+		// if no start value, assert
+		if(!startValueAssigned){
+			std::cerr << "COULD NOT ASSIGN START VALUE " << std::endl;
+			assert(0);
+		}
+	}
+	return startVal;
+}
+
+/* in loop path, get the iterator value. check for load, operation and store on the variable. operation could be ADD, SUB, or some other operation. assert if the no OP detected between load and store. this means there is another operation, other than ADD or SUB that has taken place.
+*/
+
+void loopSymx :: getOperation(struct pathMeta *pathStruct, struct iteratorOperation *op)
+{
+	BasicBlock* loopBackBB = getLoopBackBB(pathStruct->bbList);
+	assert(loopBackBB != nullptr);
+//	auto itVal = getIteratorLLVMValue(loopBackBB);
 
 		
+}
+
+// get loop iteartor START value, END value, operation, and loop Count 
+// values for FIL or loop type as IDL
+
+void loopSymx:: deriveIteratorProperties()
+{
+	updateLoopPaths();
+	// go through all paths and derive iterator start, end, operation type
+	// in loopentry block, mark what is being loaded and compared. this value
+	// is the iterator Value.
+	
+	for( auto pathStructure : pathList) {
+		if(pathStructure -> loopExists ){ 
+			uint64_t startVal = getStartValue(pathStructure);
+			std::cerr << __func__ << "(): START VALUE = " << startVal << std::endl;
+			// OPERATION
+
+			struct iteratorOperation itOp; 
+			getOperation(pathStructure, &itOp);
+											
+			// END VALUE
+			// get cmp operation. the end value would be iterator < 64 == FALSE.
+			
+			// GET LOOP COUNT
+			// op value = post value - pre value / operation = 64 - 0 / 1 = 64 times
+			// derive loop Count if FIL. mark loop count = INPUT_DEPENDANT if IDL
+		}
+	}
 }
 
 bool loopSymx:: hasLoopEntryBlock(std::list <BasicBlock *> *path)
@@ -482,7 +645,7 @@ void loopSymx:: addLoopPath(std::stack <BasicBlock *> *bbStack)
 	std::list< struct pathMeta *>::iterator it = pathList.end();
 	it--;
 	struct pathMeta *s = new struct pathMeta;
-//	s -> loopExists = hasLoopEntryBlock(newList);
+	s -> loopExists = false;
 //	std::cerr << "LOOP EXISTS = " << s->loopExists << std::endl;
 	s -> bbList = newList;
 	pathList.insert(it,s);
