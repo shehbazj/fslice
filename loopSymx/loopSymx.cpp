@@ -64,17 +64,59 @@ enum operationType {
 	UNKNOWNOP,
 };
 
+enum condition {
+  FCMP_FALSE = 0,
+  FCMP_OEQ =  1,
+  FCMP_OGT =  2,
+  FCMP_OGE =  3,
+  FCMP_OLT =  4,
+  FCMP_OLE =  5,
+  FCMP_ONE =  6,
+  FCMP_ORD =  7,
+  FCMP_UNO =  8,
+  FCMP_UEQ =  9,
+  FCMP_UGT = 10,
+  FCMP_UGE = 11,
+  FCMP_ULT = 12,
+  FCMP_ULE = 13,
+  FCMP_UNE = 14,
+  FCMP_TRUE= 15,
+  ICMP_EQ  = 32,
+  ICMP_NE  = 33,
+  ICMP_UGT = 34,
+  ICMP_UGE = 35,
+  ICMP_ULT = 36,
+  ICMP_ULE = 37,
+  ICMP_SGT = 38,
+  ICMP_SGE = 39,
+  ICMP_SLT = 40,
+  ICMP_SLE = 41,
+};
+
 // Introduces generic dynamic program slic recording into code.
 class loopSymx : public ModulePass {
 	public:
-		struct pathMeta {
-			std:: list <BasicBlock *> *bbList;
-			bool loopExists;
-		};
-
 		struct iteratorOperation {
 			enum operationType oT;
 			uint64_t operand;
+		};
+
+		struct loopEndCondition {
+			bool FIL;
+			bool IDL;
+			enum condition cond;
+			uint64_t startValue;
+			uint64_t endValue;	// XXX add more types
+			uint64_t loopCount;
+			loopEndCondition() : FIL(false), IDL(false){}
+		};
+
+		struct pathMeta {
+			std:: list <BasicBlock *> *bbList;
+			bool loopExists;
+			struct iteratorOperation itOp;
+			struct loopEndCondition loopEndCond;
+			std:: list <char> *branchConditionTree;		
 		};
 
 		loopSymx(void);
@@ -126,7 +168,8 @@ class loopSymx : public ModulePass {
 		unsigned getConstant(Value *op);
 		void updateLoopPaths();
 		uint64_t getStartValue(struct pathMeta *);
-		void getOperation(struct pathMeta *, struct iteratorOperation *);
+		void getOperation(struct pathMeta *, struct iteratorOperation *, struct loopEndCondition *loopEndCond);
+		void getEndCondition(BasicBlock *loopEntryBB, struct loopEndCondition *loopEndCond, struct iteratorOperation *);
 		BasicBlock *getPenultimateBB(std::list <BasicBlock *> *path);
 		void getIteratorOperation(struct BasicBlock *, struct iteratorOperation *, BasicBlock *loopBackBB);
 
@@ -134,6 +177,13 @@ class loopSymx : public ModulePass {
 	//	void setOperator(UnaryInstruction *UI, enum operationType *op);
 		enum operandType getOperandType(Value *V);
 		void setOperandType(Value *V, enum operandType opType);
+		void solveConstraints();
+		void expandPath(struct pathMeta *pathM);
+		void buildBranchConditionTree(struct pathMeta *pathM);
+		void listDataFlowConstraints();
+		std::list <BasicBlock *> *getLoopBodyPath(std::list <BasicBlock *> *path);
+
+		void copyIteratorMetadata(struct pathMeta *, struct iteratorOperation *, struct loopEndCondition *);
 
 		template <typename T>
 			bool isLoopBack(T *currentBB, std::stack <T *> *bbStack);
@@ -176,6 +226,38 @@ class loopSymx : public ModulePass {
 
 		Type *IntPtrTy;
 };
+
+
+std::map<int , const char *> Predicate {
+  // Opcode        
+   {   0, "FCMP_FALSE"},
+   {   1, "FCMP_OEQ"  },
+   {   2, "FCMP_OGT"  },
+   {   3, "FCMP_OGE"  },
+   {   4, "FCMP_OLT"  },
+   {   5, "FCMP_OLE"  },
+   {   6, "FCMP_ONE"  },
+   {   7, "FCMP_ORD"  },
+   {   8, "FCMP_UNO"  },
+   {   9, "FCMP_UEQ"  },
+   {  10, "FCMP_UGT"  },
+   {  11, "FCMP_UGE"  },
+   {  12, "FCMP_ULT"  },
+   {  13, "FCMP_ULE"  },
+   {  14, "FCMP_UNE"  },
+   {  15, "FCMP_TRUE" },
+   {  32, "ICMP_EQ"  } ,
+   {  33, "ICMP_NE"  } ,
+   {  34, "ICMP_UGT" } ,
+   {  35, "ICMP_UGE" } ,
+   {  36, "ICMP_ULT" } ,
+   {  37, "ICMP_ULE" } ,
+   {  38, "ICMP_SGT" } ,
+   {  39, "ICMP_SGE" } ,
+   {  40, "ICMP_SLT" } ,
+   {  41, "ICMP_SLE" } ,
+};
+  
 
 loopSymx::loopSymx(void): ModulePass(ID){}
 
@@ -325,7 +407,7 @@ void loopSymx:: runOnICmp(ICmpInst *I)
 	}else if(op1Type == op2Type){
 		setOperandType(I, op1Type);
 	}else {
-		std::cerr << "NO BRANCH TYPE AVAILABLE FOR " << op1Type << " CMP " << op2Type << std::endl;
+	std::cerr << "NO BRANCH TYPE AVAILABLE FOR " << op1Type << " CMP " << op2Type << std::endl;
 		assert(0);
 	}
 }
@@ -655,6 +737,7 @@ void loopSymx:: getIteratorOperation(BasicBlock *pathBB, struct iteratorOperatio
 		        auto operand1 = BI->getOperand(1);
 			if(operand0 == newitVal){
 				constOperator = getConstant(operand1);								
+				std::cerr << __func__ << "(): constOperator = " << constOperator << std::endl;
 				validOperation = true;
 				setOperator(BI, &op);
 			}else if(operand1 == newitVal){
@@ -671,10 +754,35 @@ void loopSymx:: getIteratorOperation(BasicBlock *pathBB, struct iteratorOperatio
 	}
 }
 
-// XXX redo later.
+void loopSymx:: getEndCondition(BasicBlock *loopEntryBB, struct loopEndCondition *loopEndCond, struct iteratorOperation *itOp)
+{
+	for(auto &I : *loopEntryBB)
+	{
+		if (ICmpInst *IC = dyn_cast<ICmpInst>(&I)) {
+        		auto op2 = IC->getOperand(1);
+		        auto Pred = IC->getUnsignedPredicate();
+				
+        		if (dyn_cast<ConstantInt>(op2)){
+				loopEndCond-> FIL = true; 
+				loopEndCond-> IDL = false;
+				loopEndCond-> endValue = getConstant(op2);
+			}else{
+				loopEndCond-> FIL = false; 
+				loopEndCond-> IDL = true;
+			}
+			loopEndCond -> cond = static_cast<enum condition>(Pred);
+			std::cerr << __func__ << "loop End Cond operand = " << loopEndCond -> endValue << " operation operand " <<  itOp-> operand <<  std::endl;
+			loopEndCond -> loopCount = abs(loopEndCond-> endValue - loopEndCond-> startValue) / (itOp -> operand);
+			std::cerr << "absolute value assigned = " << abs(loopEndCond-> endValue - loopEndCond -> startValue) / (itOp -> operand);
+			std::cerr << __func__ << " loop end count is " << loopEndCond -> loopCount << std::endl;
+		}
+	}
+}
+
+// XXX revisit.
 // we currently only look at prenultimate basic block, immediately before the loopback block. there, we track the load, store and unary / binary operations.
 
-void loopSymx :: getOperation(struct pathMeta *pathStruct, struct iteratorOperation *itOp)
+void loopSymx :: getOperation(struct pathMeta *pathStruct, struct iteratorOperation *itOp , struct loopEndCondition *loopEndCond)
 {
 	// get loopback block and iterator LLVM Value
 	BasicBlock* loopBackBB = getLoopBackBB(pathStruct->bbList);
@@ -682,6 +790,21 @@ void loopSymx :: getOperation(struct pathMeta *pathStruct, struct iteratorOperat
 
 	auto pathBB = getPenultimateBB(pathStruct->bbList);
 	getIteratorOperation(pathBB, itOp, loopBackBB);
+	std::cerr << __func__ << " itOp operand = " << itOp-> operand << std::endl;
+	getEndCondition(loopBackBB, loopEndCond, itOp);
+	std::cerr << __func__ << " after end condition itOp operand = " << itOp-> operand << std::endl;
+}
+
+
+void loopSymx :: copyIteratorMetadata(struct pathMeta *pathM, struct iteratorOperation *itOp, struct loopEndCondition *lec)
+{
+	pathM -> itOp.oT = itOp->oT;
+	pathM -> itOp.operand = itOp->operand;
+	pathM -> loopEndCond.FIL =  lec->FIL;
+	pathM -> loopEndCond.IDL =  lec->IDL;
+	pathM -> loopEndCond.cond =  lec->cond;
+	pathM -> loopEndCond.startValue =  lec->startValue;
+	pathM -> loopEndCond.loopCount = lec->loopCount;
 }
 
 // get loop iteartor START value, END value, operation, and loop Count 
@@ -695,20 +818,26 @@ void loopSymx:: deriveIteratorProperties()
 	// is the iterator Value.
 	
 	for( auto pathStructure : pathList) {
+		std::cerr << __func__ << " BEGIN " << std::endl;
 		if(pathStructure -> loopExists ){ 
+			struct iteratorOperation *itOp = new struct iteratorOperation; 
+			struct loopEndCondition *loopEndCond = new struct loopEndCondition;
+			std::cerr << "PATH Structure Loopexists = " << pathStructure-> loopExists << std::endl;
 			uint64_t startVal = getStartValue(pathStructure);
 			std::cerr << __func__ << "(): START VALUE = " << startVal << std::endl;
 			// OPERATION
 
-			struct iteratorOperation itOp; 
-			getOperation(pathStructure, &itOp);
+			loopEndCond->startValue = startVal;
+			getOperation(pathStructure, itOp, loopEndCond);
 			
-			std::cerr << __func__ << " OPERATION = " << itOp.oT << std::endl;
+			std::cerr << __func__ << " OPERATION = " << itOp->oT << std::endl;
 		
-			std::cerr << __func__ << " OPERAND = " << itOp.operand << std::endl;
+			std::cerr << __func__ << " OPERAND = " << itOp->operand << std::endl;
+			std::cerr << __func__ << " LOOP COUNT = " << loopEndCond->loopCount << std::endl;
+			copyIteratorMetadata(pathStructure, itOp, loopEndCond);
+
 			// END VALUE
 			// get cmp operation. the end value would be iterator < 64 == FALSE.
-			
 			// GET LOOP COUNT
 			// op value = post value - pre value / operation = 64 - 0 / 1 = 64 times
 			// derive loop Count if FIL. mark loop count = INPUT_DEPENDANT if IDL
@@ -976,6 +1105,128 @@ bool loopSymx::hasLoop(BasicBlock *currentBB, std::stack<BasicBlock *> *bbStack)
 	return loopExists;
 }
 
+/* traverse the entire path and extract path between start of loop Entry and
+ * of loopEntry
+ * */
+std::list <BasicBlock *> * loopSymx:: getLoopBodyPath(std::list <BasicBlock *> *path)
+{
+	BasicBlock *loopBackBB = getLoopBackBB(path);
+	
+	std::list <BasicBlock *> *loopBodyBBs = new std::list <BasicBlock *>;
+	bool append = false;
+	for(auto &bb : *path )
+	{
+		if(bb->getName().data() == loopBackBB->getName().data() ) {
+			if(!append){
+				append = true;
+				loopBodyBBs->push_back(bb);
+			}else{
+				return loopBodyBBs;
+			}
+		}
+		else if(append){
+			loopBodyBBs->push_back(bb);
+		}	
+	}
+	assert(0);	 
+}
+
+/* for paths containing loop entry blocks, we elongate the path so that all blocks
+ * within the loop segment are repeated till loopentry branch condition gets dissatisfied
+ * */
+
+void loopSymx:: expandPath(struct pathMeta *pathM)
+{
+	std::cerr << __func__ << "():" << std::endl;
+	BasicBlock *loopBackBB = getLoopBackBB(pathM -> bbList);
+	std::list <BasicBlock *>:: iterator it;
+	it = pathM -> bbList->begin();
+
+	// move iterator to the first loopback block
+	while(((*it)->getName().data() != loopBackBB->getName().data()) && it!= pathM->bbList->end() ){
+		D(std::cerr << __func__ << " bb name " << (*it)->getName().data() << " loopback name " << loopBackBB->getName().data() << std::endl;)
+		it++;
+	}
+	assert(it != pathM->bbList->end()); //COULD NOT FIND loopback BB
+
+	auto loopCount = pathM-> loopEndCond.loopCount;
+					
+	std::list <BasicBlock *> *loopBodyList = getLoopBodyPath(pathM->bbList);
+
+	std::cerr << "Loop body contents " << std::endl;
+	for(auto &it : *loopBodyList){
+		std::cerr << it->getName().data() << std::endl;
+	}
+	std::cerr << "loopcount = " << loopCount << std::endl;
+	for(unsigned i=0; i < loopCount -1 ; i++){
+		pathM->bbList->insert(it, loopBodyList->begin(), loopBodyList->end());
+	}
+	std::cerr << "Extended Path " << std::endl;
+	for(auto &it : *(pathM->bbList)){
+		std::cerr << it->getName().data() << std::endl;
+	}
+}
+
+/* we generate a path constraint list for the expanded paths containing bit trails of 
+ * 0 and 1. This signifies which branch was taken after reaching a certain path
+ * */
+
+void loopSymx:: buildBranchConditionTree(struct pathMeta *pathM)
+{
+	// iterate through path. if you find a branch condition, check which of the
+	// children are explored.	
+	pathM -> branchConditionTree = new std::list<char>;
+	for( std::list<BasicBlock *>::iterator bb_it = pathM->bbList->begin();bb_it != pathM->bbList->end() ; std::advance(bb_it,1))
+	{
+		if((*bb_it)->getTerminator()->getNumSuccessors() == 2){
+			auto nextbb = std::next(bb_it,1);
+			if((*bb_it)->getTerminator() -> getSuccessor(0) == *nextbb){
+				pathM->branchConditionTree->push_back('T');
+			}else {
+				pathM->branchConditionTree->push_back('F');
+			}
+		}else if((*bb_it)->getTerminator()->getNumSuccessors() > 2){
+			assert(0);	
+		}
+	}
+}
+
+/* start from entry block, go instruction by instruction marking the input blocks and
+ * printing the other instruction equavalent taints to be processed later by Z3 python
+ * API
+ * */
+
+void loopSymx:: listDataFlowConstraints()
+{
+
+}
+
+// expand all loop based paths.
+// go through entire basic block and for each instruction write down the data flow.
+// for blocks having multiple successors, we add constraint that makes control flow
+// move from parent to the child in the expected path.
+// for loop constructs, control flow goes to loop entry block until loop entry branch
+// condition is negated
+
+void loopSymx :: solveConstraints()
+{
+	for(auto &pathM : pathList){
+		std::cerr << __func__ << "(): PATH " << std::endl;
+		for(auto &it : *(pathM->bbList)){
+			std::cerr << it->getName().data() << std::endl;
+		}
+
+		if(pathM->loopExists) {
+			expandPath(pathM);
+		}
+		buildBranchConditionTree(pathM);
+		for(auto bb_it : *(pathM->branchConditionTree) ) {
+			std::cerr << bb_it << std::endl;
+		}
+		//listDataFlowConstraints();
+	}
+}
+
 bool loopSymx::runOnModule(Module &M_) {
 	M = &M_;
 	for(auto &F_ : M->functions()){
@@ -988,43 +1239,18 @@ bool loopSymx::runOnModule(Module &M_) {
 			deriveIteratorProperties();
 
 		// TODO
-		// rewrite paths for FIL.
-		// getBranch Conditions. generate Input to follow branches in the enumerated path.
-
-		// TODO
 		// get Loop Dependent variables, get loop dependent branches, derive iteration count to evaluate
 		// loop dependent branches to true.
 		//
 		// TODO
 		// IDL - how do you get minimum iterations?
 		//
-
-		//	if(hasLoop(&(F->getEntryBlock()), bbStack)){
-				// data flow pass to mark input dependent, constant, and unknown variable types.
-				/*
-					// std::cerr << F->getName().data() << " has a loop " << std::endl;
-					// check loop condition. classify as IDL or FIL
-					getLoopType();			
-					// XXX flag loops that have iterator operations in BBs other than loop entry block.
-					// get iterator operation within the loop structure.
-					// predecessor of the loop block inside the loop will have this value.
-					extractIteratorOperation();
-					// mark different branches as - input dependent (data flow dependency)
-					// concrete
-					// control flow dependent
-					analyseBranches();
-				*/
-			
-				//displayLoopPathMap();
-				//displayBBTaintMap();
-		//	}else{
-		//		std::cerr << "For function " << F->getName().data() << " loop not detected " << std::endl;
-		//	}
+			solveConstraints();
 		}else{
 			if(F->hasName()){
 				std::cerr << "Function " << F->getName().data() << " is declaration " << std::endl;
 			}
-		}	
+		}
 	}
         return true;
 }
