@@ -127,7 +127,11 @@ class loopSymx : public ModulePass {
 		void updateLoopPaths();
 		uint64_t getStartValue(struct pathMeta *);
 		void getOperation(struct pathMeta *, struct iteratorOperation *);
+		BasicBlock *getPenultimateBB(std::list <BasicBlock *> *path);
+		void getIteratorOperation(struct BasicBlock *, struct iteratorOperation *, BasicBlock *loopBackBB);
 
+		void setOperator(BinaryOperator *BI, enum operationType *op);
+	//	void setOperator(UnaryInstruction *UI, enum operationType *op);
 		enum operandType getOperandType(Value *V);
 		void setOperandType(Value *V, enum operandType opType);
 
@@ -568,17 +572,116 @@ uint64_t loopSymx :: getStartValue( struct pathMeta *pathStructure)
 	}
 	return startVal;
 }
+/*
+void loopSymx :: setOperator(UnaryInstruction *UI, enum operationType *op)
+{
+	if(UI->getOpcode() == Instruction::Add){
+		*op = INCREMENT;
+	}else if(UI->getOpcode() == Instruction::Sub) {
+		*op = DECREMENT;
+	}
+}
+*/
+void loopSymx :: setOperator(BinaryOperator *BI, enum operationType *op)
+{
+	if(BI->getOpcode() == Instruction::Add){
+		*op = INCREMENT;
+	}else if(BI->getOpcode() == Instruction::Sub) {
+		*op = DECREMENT;
+	}
+}
+
+/* returns Basic block immediately preceeding loopBackBlock */
+
+BasicBlock * loopSymx::getPenultimateBB(std::list <BasicBlock *> *path)
+{
+	auto pathBB = path->begin();
+	// move iterator to loopEntry position
+
+	BasicBlock* loopBackBB = getLoopBackBB(path);
+	assert(loopBackBB != nullptr);
+	
+	while(*pathBB != loopBackBB){
+		pathBB = std::next(pathBB,1);
+	}
+	pathBB = std::next(pathBB, 1);
+	auto prevPathBB = pathBB;
+	while(*pathBB != loopBackBB){
+		prevPathBB = pathBB;
+		pathBB = std::next(pathBB,1);
+	}
+	if(pathBB == path->end()){
+		std::cerr << "COULD NOT FIND LOOPBACK BLOCK IN PATH CONTAINING LOOP" << std::endl;
+		assert(0);
+	}
+	pathBB = prevPathBB;
+	return *pathBB;
+}
 
 /* in loop path, get the iterator value. check for load, operation and store on the variable. operation could be ADD, SUB, or some other operation. assert if the no OP detected between load and store. this means there is another operation, other than ADD or SUB that has taken place.
 */
 
-void loopSymx :: getOperation(struct pathMeta *pathStruct, struct iteratorOperation *op)
+void loopSymx:: getIteratorOperation(BasicBlock *pathBB, struct iteratorOperation *itOp, BasicBlock *loopBackBB)
 {
+	bool processingIterator = false;
+	bool validOperation = false;
+
+	uint64_t constOperator;
+	enum operationType op;
+
+	auto itVal = getIteratorLLVMValue(loopBackBB);
+	auto newitVal = itVal;
+	for(auto &I : *pathBB){
+		if (LoadInst *LI = dyn_cast<LoadInst>(&I)) {
+			auto op = LI->getPointerOperand();
+			if(op == itVal){
+				processingIterator = true;
+				newitVal = LI;
+			}
+		}
+        	if (StoreInst *SI = dyn_cast<StoreInst>(&I)) {
+			auto storeLocationValue = SI->getPointerOperand();
+			if(processingIterator && validOperation
+				 && storeLocationValue == itVal) {
+				// copy valid instruction
+	        	        //runOnStore(SI);
+	        	        itOp -> oT = op;
+				itOp -> operand = constOperator; 
+				validOperation = false;
+			}
+		}
+		if (BinaryOperator *BI = dyn_cast<BinaryOperator>(&I)) {
+			auto operand0 = BI->getOperand(0);
+		        auto operand1 = BI->getOperand(1);
+			if(operand0 == newitVal){
+				constOperator = getConstant(operand1);								
+				validOperation = true;
+				setOperator(BI, &op);
+			}else if(operand1 == newitVal){
+				constOperator = getConstant(operand0);		
+				validOperation = true;
+			
+				setOperator(BI, &op);
+			}else if (operand0 == newitVal && operand1 == itVal){
+				setOperator(BI, &op);
+				std::cerr << "ITERATOR PROCESSED WITH OWN ITERATOR" << std::endl;
+				assert(0);		
+			}
+		}
+	}
+}
+
+// XXX redo later.
+// we currently only look at prenultimate basic block, immediately before the loopback block. there, we track the load, store and unary / binary operations.
+
+void loopSymx :: getOperation(struct pathMeta *pathStruct, struct iteratorOperation *itOp)
+{
+	// get loopback block and iterator LLVM Value
 	BasicBlock* loopBackBB = getLoopBackBB(pathStruct->bbList);
 	assert(loopBackBB != nullptr);
-//	auto itVal = getIteratorLLVMValue(loopBackBB);
 
-		
+	auto pathBB = getPenultimateBB(pathStruct->bbList);
+	getIteratorOperation(pathBB, itOp, loopBackBB);
 }
 
 // get loop iteartor START value, END value, operation, and loop Count 
@@ -599,7 +702,10 @@ void loopSymx:: deriveIteratorProperties()
 
 			struct iteratorOperation itOp; 
 			getOperation(pathStructure, &itOp);
-											
+			
+			std::cerr << __func__ << " OPERATION = " << itOp.oT << std::endl;
+		
+			std::cerr << __func__ << " OPERAND = " << itOp.operand << std::endl;
 			// END VALUE
 			// get cmp operation. the end value would be iterator < 64 == FALSE.
 			
