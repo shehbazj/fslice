@@ -1,0 +1,175 @@
+acl.c:	for (n = 0; n < count; n++) {
+acl.c:	for (n = 0; n < acl->a_count; n++) {
+balloc.c:	for (i = 0; i < sbi->s_itb_per_group; i++) {
+balloc.c:	for (bit = 0; bit < bit_max; bit++)
+balloc.c:	for (; tmp < ext4_inode_table(sb, gdp) +
+balloc.c:	for (i = 0; i < ngroups; i++) {
+balloc.c:	for (i = 0; i < ngroups; i++) {
+block_validity.c:	for (i=0; i < ngroups; i++) {
+dir.c:			for (i = 0; i < sb->s_blocksize && i < offset; ) {
+extents.c:		for (i = le16_to_cpu(eh->eh_entries); i > 0; i--, ex++) {
+extents.c:	for (k = 0; k <= l; k++, path++) {
+extents.c:	for (i = 0; i < le16_to_cpu(eh->eh_entries); i++, ex++) {
+extents.c:	for (i = 0; i <= depth; i++, path++)
+extents.c:		for (k = 0; k < le16_to_cpu(eh->eh_entries); k++, ix++) {
+extents.c:		for (k = 0; k < le16_to_cpu(eh->eh_entries); k++, ex++) {
+extents.c:	for (a = 0; a < depth - at; a++) {
+extents.c:		for (i = 0; i < depth; i++) {
+extents.c:	for (i = depth-1; i >= 0; i--)
+file.c:		for (i = 0; i < nr_pages; i++) {
+fsmap.c:	for (agno = 0; agno < EXT4_SB(sb)->s_groups_count; agno++) {
+fsmap.c:	for (info->gfi_agno = start_ag;
+fsmap.c:	for (i = 0; i < EXT4_GETFSMAP_DEVS; i++) {
+hash.c:	for (i = 0; i < len; i++) {
+hash.c:	for (i = 0; i < len; i++) {
+hash.c:		for (i = 0; i < 4; i++) {
+ialloc.c:	for (i = start_bit; i < ((start_bit + 7) & ~7UL); i++)
+ialloc.c:		for (i = 0; i < ngroups; i++) {
+ialloc.c:		for (i = 0; i < flex_size; i++) {
+ialloc.c:	for (i = 0; i < ngroups; i++) {
+ialloc.c:	for (i = 0; i < ngroups; i++) {
+ialloc.c:	for (i = 1; i < ngroups; i <<= 1) {
+ialloc.c:	for (i = 0; i < ngroups; i++) {
+ialloc.c:	for (i = 0; i < ngroups; i++, ino = 0) {
+ialloc.c:	for (i = 0; i < ngroups; i++) {
+ialloc.c:	for (i = 0; i < ngroups; i++) {
+ialloc.c:	for (i = 0; i < ngroups; i++) {
+indirect.c:	for (p = ind->p - 1; p >= start; p--) {
+indirect.c:	for (i = 0; i <= indirect_blks; i++) {
+indirect.c:		for (j = 0; j < len; j++)
+indirect.c:	for (; i >= 0; i--) {
+indirect.c:		for (i = 1; i < ar->len; i++)
+indirect.c:	for (i = 1; i <= num; i++) {
+indirect.c:		for (i = 0; partial + i != chain + depth - 1; i++)
+indirect.c:	for (k = depth; k > 1 && !offsets[k-1]; k--)
+indirect.c:	for (p = partial; (p > chain) && all_zeroes((__le32 *) p->bh->b_data, p->p); p--)
+indirect.c:	for (p = first; p < last; p++)
+indirect.c:	for (p = first; p < last; p++) {
+indirect.c:		for (i = 0; i <= level; i++) {
+inline.c:	for (; !IS_LAST_ENTRY(entry); entry = EXT4_XATTR_NEXT(entry)) {
+inline.c:		for (i = 0; i < extra_size && i < offset;) {
+inode.c:	for (bh = head, block_start = 0;
+inode.c:	for (bh = head, block_start = 0; bh != head || !block_start;
+inode.c:		for (i = 0; i < nr_pages; i++) {
+inode.c:		for (i = 0; i < nr_pages; i++) {
+inode.c:		for (i = 0; i < nr_pages; i++) {
+inode.c:	for (i = 0; i < idx; i++)
+inode.c:			for (i = start; i < start + inodes_per_block; i++) {
+inode.c:	for (block = 0; block < EXT4_N_BLOCKS; block++)
+inode.c:	for (i = 0; i < inodes_per_block; i++, ino++, buf += inode_size) {
+inode.c:		for (block = 0; block < EXT4_N_BLOCKS; block++)
+ioctl.c:	for (i = 0; i < 16; i++)
+ioctl.c:	for (i = 0, mask = 1; i < 32; i++, mask <<= 1) {
+mballoc.c:	for (i = 0; i < count; i++) {
+mballoc.c:	for (i = 0; i < count; i++) {
+mballoc.c:		for (i = 0; i < e4b->bd_sb->s_blocksize; i++) {
+mballoc.c:		for (i = 0; i < max; i++) {
+mballoc.c:			for (j = 0; j < (1 << order); j++) {
+mballoc.c:	for (i = 0; i < max; i++) {
+mballoc.c:		for (j = 0; j < e4b->bd_blkbits + 1; j++) {
+mballoc.c:		for (i = 0; i < pa->pa_len; i++)
+mballoc.c:	for (i = bits; i >= 0; i--) {
+mballoc.c:	for (i = 0, group = first_group; i < groups_per_page; i++, group++) {
+mballoc.c:	for (i = 0, group = first_group; i < groups_per_page; i++, group++) {
+mballoc.c:	for (i = 0; i < blocks_per_page; i++) {
+mballoc.c:		for (i = 0; i < groups_per_page; i++)
+mballoc.c:	for (i = ac->ac_2order; i <= sb->s_blocksize_bits + 1; i++) {
+mballoc.c:	for (; cr < 4 && ac->ac_status == AC_STATUS_CONTINUE; cr++) {
+mballoc.c:		for (i = 0; i < ngroups; group++, i++) {
+mballoc.c:	for (i = 0; i <= 13; i++)
+mballoc.c:	for (i = 0; i < ngroups; i++) {
+mballoc.c:	for (i = 0; i < NR_GRPINFO_CACHES; i++) {
+mballoc.c:		for (j = 0; j < PREALLOC_TB_SIZE; j++)
+mballoc.c:		for (i = 0; i < ngroups; i++) {
+mballoc.c:		for (i = 0; i < num_meta_group_infos; i++)
+mballoc.c:		for (i = 0; i < ac->ac_b_ex.fe_len; i++) {
+mballoc.c:	for (i = order; i < PREALLOC_TB_SIZE; i++) {
+mballoc.c:	for (i = 0; i < ngroups; i++) {
+mballoc.c:	for (i = 0; i < ngroups && needed > 0; i++) {
+mballoc.c:		for (i = 0; i < count; i++) {
+mballoc.c:		for (i = 0; i < count_clusters; i++)
+mballoc.c:	for (i = 0, blocks_freed = 0; i < count; i++) {
+mballoc.c:	for (group = first_group; group <= last_group; group++) {
+migrate.c:	for (i = 0; i < max_entries; i++) {
+migrate.c:	for (i = 0; i < max_entries; i++) {
+migrate.c:	for (i = 0; i < max_entries; i++) {
+migrate.c:	for (i = 0; i < max_entries; i++) {
+migrate.c:	for (i = 0; i < max_entries; i++) {
+migrate.c:		for (i = 0; i < le16_to_cpu(eh->eh_entries); i++, ix++) {
+migrate.c:	for (i = 0; i < le16_to_cpu(eh->eh_entries); i++, ix++) {
+migrate.c:	for (i = 0; i < EXT4_NDIR_BLOCKS; i++) {
+migrate.c:	for (i = start; i <= end; i++)
+move_extent.c:	for (bh = head, block_start = 0; bh != head || !block_start;
+move_extent.c:	for (i = 0; i < nr; i++) {
+move_extent.c:	for (i = 0; i < data_offset_in_page; i++)
+move_extent.c:	for (i = 0; i < block_len_in_page; i++) {
+namei.c:	for (i = 0; i < n; i++) {
+namei.c:	for (i = 0; i < count; i++, entries++)
+namei.c:	for (; de < top; de = ext4_next_entry(de, dir->i_sb->s_blocksize)) {
+namei.c:		for (p = top, q = p - count; q >= map; p--, q--)
+namei.c:			for (ra_max = 0; ra_max < NAMEI_RA_SIZE; ra_max++) {
+namei.c:	for (; ra_ptr < ra_max; ra_ptr++)
+namei.c:	for (i = count-1; i >= 0; i--) {
+namei.c:	for (block = 0; block < blocks; block++) {
+page-io.c:	for (bio = io_end->bio; bio; bio = next_bio) {
+readpage.c:	for (; nr_pages; nr_pages--) {
+readpage.c:			for (relative_block = 0; ; relative_block++) {
+readpage.c:			for (relative_block = 0; ; relative_block++) {
+resize.c:	for (; src_group <= last_group; src_group++) {
+resize.c:	for (; bb_index < flex_gd->count; bb_index++) {
+resize.c:	for (; ib_index < flex_gd->count; ib_index++) {
+resize.c:	for (; it_index < flex_gd->count; it_index++) {
+resize.c:		for (i = 0; i < flex_gd->count; i++) {
+resize.c:	for (count2 = count; count > 0; count -= count2, block += count2) {
+resize.c:	for (i = 0; i < flex_gd->count; i++, group++) {
+resize.c:		for (j = 0; j < gdblocks; j++, block++) {
+resize.c:	for (j = 0; j < GROUP_TABLE_COUNT; j++) {
+resize.c:		for (i = 1; i < flex_gd->count; i++) {
+resize.c:	for (res = 0; res < reserved_gdb; res++, blk++) {
+resize.c:	for (i = 0; i < reserved_gdb; i++) {
+resize.c:	for (i = 0; i < reserved_gdb; i++) {
+resize.c:	for (i = 0; i < count; i++, group++) {
+resize.c:	for (i = 0; i < flex_gd->count; i++, group_data++, bg_flags++) {
+resize.c:	for (i = 0; i < flex_gd->count; i++) {
+resize.c:		for (; gdb_num <= gdb_num_end; gdb_num++) {
+resize.c:	for (i = 0; i < flex_gd->count; i++) {
+resize.c:		for (i = 0; i < EXT4_N_BLOCKS; i++) {
+super.c:	for (type = 0; type < EXT4_MAXQUOTAS; type++)
+super.c:	for (i = 0; i < sbi->s_gdb_count; i++)
+super.c:	for (i = 0; i < EXT4_MAXQUOTAS; i++)
+super.c:	for (m = ext4_mount_opts; m->token != Opt_err; m++)
+super.c:	for (t = tokens; t->token != Opt_err; t++)
+super.c:	for (m = ext4_mount_opts; m->token != Opt_err; m++) {
+super.c:	for (i = 0; i < sbi->s_groups_count; i++) {
+super.c:	for (i = 0; i < sbi->s_groups_count; i++) {
+super.c:	for (i = 0; i < EXT4_MAXQUOTAS; i++) {
+super.c:	for (i = 0; i < EXT4_MAXQUOTAS; i++) {
+super.c:	for (group = elr->lr_next_group; group < ngroups; group++) {
+super.c:	for (group = 0; group < ngroups; group++) {
+super.c:	for (i = 0; i < ngroups; i++) {
+super.c:			for (j = 0; j < sbi->s_itb_per_group; j++, b++) {
+super.c:		for (; j > 0; j--)
+super.c:	for (i = 0; i < ngroups; i++) {
+super.c:	for (i = 0; i < 4; i++)
+super.c:	for (i = 0; i < db_count; i++) {
+super.c:	for (i = 0; i < db_count; i++) {
+super.c:	for (i = 0; i < db_count; i++)
+super.c:	for (i = 0; i < EXT4_MAXQUOTAS; i++)
+super.c:	for (i = 0; i < EXT4_MAXQUOTAS; i++)
+super.c:				for (j = 0; j < i; j++)
+super.c:			for (g = 0; g < sbi->s_groups_count; g++) {
+super.c:	for (i = 0; i < EXT4_MAXQUOTAS; i++)
+super.c:	for (i = 0; i < EXT4_MAXQUOTAS; i++) {
+super.c:	for (type = 0; type < EXT4_MAXQUOTAS; type++) {
+super.c:	for (i = 0; i < EXT4_WQ_HASH_SZ; i++)
+sysfs.c:		for (p = proc_files; p->name; p++)
+sysfs.c:		for (p = proc_files; p->name; p++)
+xattr.c:	for (; !IS_LAST_ENTRY(entry); entry = EXT4_XATTR_NEXT(entry)) {
+xattr.c:	for (; !IS_LAST_ENTRY(entry); entry = EXT4_XATTR_NEXT(entry)) {
+xattr.c:	for (; !IS_LAST_ENTRY(last); last = EXT4_XATTR_NEXT(last)) {
+xattr.c:	for (; !IS_LAST_ENTRY(last); last = EXT4_XATTR_NEXT(last)) {
+xattr.c:	for (; !IS_LAST_ENTRY(last); last = EXT4_XATTR_NEXT(last)) {
+xattr.c:		for (; !IS_LAST_ENTRY(last); last = EXT4_XATTR_NEXT(last)) {
+xattr.c:	for (n = 0; n < entry->e_name_len; n++) {
+xattr.c:		for (n = (le32_to_cpu(entry->e_value_size) +
+xattr_security.c:	for (xattr = xattr_array; xattr->name != NULL; xattr++) {
