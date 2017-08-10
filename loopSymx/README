@@ -1,0 +1,79 @@
+Definitions - 
+loop dependent variables
+loop
+
+Enumerate paths without loop unroll using depth first search.
+For paths covering loop constructs, only iterate through loop condition once.
+
+You get:
+A -> B -> [ C -> D ]* -> E
+We do not know what other paths/ how many times C-> D would be run.
+
+Taint analysis for each path.
+taintInputDependentVariables()
+Mark all branches as constant, input dependent branches or unknown branches.
+
+Solve for loop iteration
+deriveIteratorProperties() (review for IDL)
+Get loop iterator, loop condition.
+If path contains loop dependent branch, compute its preloop value, post loop value, loop count. (for FIL).
+
+Taint analysis for loop dependent variables
+taintLoopDependentVariables()
+
+All variables that are being used within the loop can be classified into the following types
+
+loop dependent variables.
+Any variable that is being set within the loop. Iterator is a loop dependent variable.
+direct loop dependent variables.
+Variables that get set everytime the loop executes, and are not guarded by if condition.
+conditional loop dependent variables.
+Variables that get set inside loop but are guarded by branch condition.
+indirect loop dependent variables.
+Variables that are set inside branch condition guarded by a loop dependent variable.
+When a branch condition in a loop body is detected, we start a flag until the branch condition ends. 
+If the branch condition is input dependent - we mark all values being set within the condition as conditional loop dependent variables.
+If the branch condition is loop dependent - we mark all values being set within the loop as indirect loop dependent.
+Maintain stack for each branch condition - being input dependent or loop dependent.
+
+
+
+Generate operation summary
+for each path for each loop operation, list out each loop dependent variable operation.
+(loopVariable Value X, <loopPath , operation, operand >)
+
+Get loop dependent branch conditions
+Get loop dependent variable value for the True or False Condition.
+
+Derive operation count
+op1, op2 and so on
+
+Expand loop condition
+
+If no loop dependent variable found 
+solve path()
+Else:
+	Expand path()
+
+From the operations, we calculate number of times different paths within the loop should be executed. We replace the [C->D]* part in the loop with
+
+A->B -> [ C-> D -> P -> Q -> C -> D -> P -> Q -> P -> Q ] -> E
+Where C-> D and P->Q are two different paths leading to two different computations of the loop dependent variable.
+Note: P->Q should not have break/exit / return. We only generate 1 testcase for reaching such branches and avoid them for later iterations.
+
+Considerations for loop exapansion
+
+Fixed iteration loops:
+
+A -> B -> [ C -> D ]* -> E
+* = 100.
+C->D / P->Q does not have return or break statement
+
+Input dependent loops
+
+A -> B -> [ C -> D ]* -> E
+*>= 1
+No intermediate path can contain exit, break.
+
+Solve for inputs
+perform data trace analysis again. Get input conditions for execution expanded loop path.
