@@ -11,15 +11,16 @@ the entire function.
 For running the Z3 API, we can use the following:
 
 Z3 Installation Instructions
-
+```
 virtualenv venv
 source venv/bin/activate
 python scripts/mk_make.py --python
 cd build
 make
 make install
-# You will find Z3 and the Python bindings installed in the virtual environment
+#You will find Z3 and the Python bindings installed in the virtual environment
 venv/bin/z3 -h
 ...
 python -c 'import z3; print(z3.get_version_string())'
 ...
+```
