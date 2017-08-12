@@ -1,0 +1,46 @@
+This folder contains z3 constraints for 3 microbenchmark programs
+
+addone/
+
+for ( i = 0 ; i < loopcount ; i++){
+	count = 0;
+	if(input[i] == 'B'){
+		count++;
+	}
+}
+if(count == 100){
+	bug();
+}
+
+additerator/
+
+for ( i = 0 ; i < loopcount ; i++){
+	count = 0;
+	if(input[i] == 'B'){
+		count+=i;
+	}
+}
+if(count == 100){
+	bug();
+}
+
+addsubiterator/
+
+for ( i = 0 ; i < loopcount ; i++){
+	count = 0;
+	if(input[i] == 'B'){
+		count+=i;
+	}else{
+		count+=i;
+	}
+}
+if(count == 100){
+	bug();
+}
+
+equations for the program are generated using generateData.sh script
+
+usage ./generateData.sh [ite| linear] loopcount
+the ite option generates equations for original veritesting work
+the linear option generates equations for our work
+for addone, we have a even better solution, shown as constadd.py
