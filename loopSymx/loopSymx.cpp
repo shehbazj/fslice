@@ -48,31 +48,34 @@ using namespace llvm;
 #  define DT(x)
 #endif
 
+/*
 struct loopType {
 	
 };
+*/
 
 enum operandType {
-	CONSTANT,
+	CONSTANT = 0,
 	INPUT_DEPENDENT,
 	UNKNOWN,
 };
 
 enum operationType {
-	INCREMENT,
+	INCREMENT = 0,
 	DECREMENT,
 	UNKNOWNOP,
 };
 
 enum loopDependentVariableType {
-	NO_LOOP_DEPENDENT,
+	NO_LOOP_DEPENDENT = 0,
+	IS_LOOP_DEPENDENT,
 	DIRECT,
 	CONDITIONAL,
 	INDIRECT,
 };
 
 enum branchConditionType {
-	NO_BC_DEPENDENT,
+	NO_BC_DEPENDENT = 0,
 	INPUT_BC_DEPENDENT,
 	LOOP_DEPENDENT,
 };
@@ -158,6 +161,7 @@ class loopSymx : public ModulePass {
 		std::stack <enum branchConditionType > branchConditionStack;
 
 	private:
+		void initializeDataStructures();
 		void printBBStack(std::stack <BasicBlock *> *bbStack, BasicBlock *currentBB);
 		void storeLoopEntryBlockAndLoopPath(std::stack <BasicBlock *> *bbStack, BasicBlock *currentBB);
 		bool hasLoop(BasicBlock *currentBB, std::stack<BasicBlock *> *bbStack);
@@ -198,7 +202,7 @@ class loopSymx : public ModulePass {
 		void checkLoopVariableOnAlloca(AllocaInst *I);
 		void checkLoopVariableOnGetElementPtr(GetElementPtrInst *I);
 		// returns true if basic block has two precessors
-		bool isBranchEndBB(BasicBlock *B);
+		bool isBranchEndBB(BasicBlock *B, BasicBlock *BB);
 	
 		void displayLoopPathMap();
 		void displayPathList();
@@ -339,18 +343,22 @@ enum operandType loopSymx:: getOperandType(Value *V)
 enum loopDependentVariableType loopSymx :: getLoopDependentVariableType(Value *V)
 {
 	if(loopDependentVariableTypeMap.find(V)  == loopDependentVariableTypeMap.end()){
+	//	std::cerr << __func__ << "():returning no loop dependent " << std::endl;
 		return NO_LOOP_DEPENDENT; 
 	} 
+	//std::cerr << __func__ << "():returning some other value " << loopDependentVariableTypeMap[V] << std::endl;
 	return loopDependentVariableTypeMap[V];
 }
 
 void loopSymx:: setLoopDependentVariableType(Value *V, enum loopDependentVariableType opType)
 {
 	if(loopDependentVariableTypeMap.find(V) == loopDependentVariableTypeMap.end()){
+		//std::cerr << __func__ << "():setting loopType to " << opType << std::endl ;
 		loopDependentVariableTypeMap[V] = opType;
 	}else{
 		auto op = loopDependentVariableTypeMap[V];
 		if(opType > op){
+			//std::cerr << __func__ << "():already exists, setting loopType to " << opType << std::endl;
 			loopDependentVariableTypeMap[V] = opType;
 		}
 	}
@@ -380,33 +388,49 @@ void loopSymx:: markInput(Value *V)
  * for predecessor count 2, the basic block is a branch end block
 */
 
-bool loopSymx:: isBranchEndBB(BasicBlock *B)
+bool loopSymx:: isBranchEndBB(BasicBlock *B, BasicBlock *loopBackBB)
 {
+//	std::cerr << __func__ << "(): checking for Basic Block " << B->getName().data() << std::endl;
+	if(B == loopBackBB){
+		return false;
+	}
+
 	int predCount = 0;
 	for (auto it = pred_begin(B) ; it != pred_end(B); ++it)
 	{	
 		predCount++;
 	}	
 	if(predCount ==1){
+//		std::cerr << __func__ << "(): pred count = 1 " << B->getName().data() << std::endl;
 		return false;
 	}
 	if(predCount ==2){
+//		std::cerr << __func__ << "(): pred count = 2 " << B->getName().data() << std::endl;
 		return true;
 	}
-	std::cerr << __func__ << "predCount = " << predCount << std::endl;
+	std::cerr << __func__ << "():" << B->getName().data() << " predCount = " << predCount << std::endl;
 	assert(0);	
 }
 
 void loopSymx:: checkLoopVariableOnLoad(LoadInst *LI)
 {
-	/*lhs gets the rhs operand type*/
-	//auto P = LI->getPointerOperand();
-	//enum loopDependentVariableTypeMap opType = getLoopDependentVariableType(P);
-	//if(opType ==  
-	//setLoopDependentVariableType(LI, opType);
 	auto P = LI->getPointerOperand();
 	auto opType = getLoopDependentVariableType(P);
-	setLoopDependentVariableType(LI, opType);
+	//std::cerr << __func__ << "():" << LI->getParent()->getName().data() << " -> " << opType << std::endl;
+	if(branchConditionStack.empty()){
+		if(opType == IS_LOOP_DEPENDENT){
+			setLoopDependentVariableType(LI, DIRECT);
+		}else{
+			assert(opType == NO_LOOP_DEPENDENT);
+		}
+	}else{
+		auto opType = branchConditionStack.top();
+		if(opType == INPUT_BC_DEPENDENT){
+			setLoopDependentVariableType(LI, CONDITIONAL);
+		}else if(opType == LOOP_DEPENDENT){
+			setLoopDependentVariableType(LI, INDIRECT);
+		}
+	}
 }
 
 void loopSymx:: checkLoopVariableOnStore(StoreInst *SI)
@@ -415,7 +439,23 @@ void loopSymx:: checkLoopVariableOnStore(StoreInst *SI)
 	auto P = SI->getPointerOperand();
 	
 	auto opType = getLoopDependentVariableType(V);	
-	setLoopDependentVariableType(P , opType);
+	if(branchConditionStack.empty()){
+		if(opType == IS_LOOP_DEPENDENT){
+			setLoopDependentVariableType(P, DIRECT);
+		}else{
+			assert(opType == NO_LOOP_DEPENDENT);
+		}
+	}else{
+		if(opType <= IS_LOOP_DEPENDENT){
+			auto bcopType = branchConditionStack.top();
+			if(bcopType == INPUT_BC_DEPENDENT){
+				setLoopDependentVariableType(P, CONDITIONAL);
+			}else if(bcopType == LOOP_DEPENDENT){
+				setLoopDependentVariableType(P, INDIRECT);
+			}
+		}
+	}
+//	setLoopDependentVariableType(P,opType);
 }
 
 void loopSymx:: checkLoopVariableOnBranch(BranchInst *BI)
@@ -492,15 +532,33 @@ void loopSymx:: checkLoopVariableOnBinary(BinaryOperator *I)
 	}
 }
 
+/* if any of the operators are loop dependent, the comparator also
+ * becomes loop dependent */
+
 void loopSymx:: checkLoopVariableOnICmp(ICmpInst *I)
 {
- 	//auto op1 = I->getOperand(0);
-        //auto op2 = I->getOperand(1);
+ 	auto op1 = I->getOperand(0);
+        auto op2 = I->getOperand(1);
 	
-	//auto op1Type = getLoopDependentVariableType(op1);
-	//auto op2Type = getLoopDependentVariableType(op2);
+	auto op1Type = getLoopDependentVariableType(op1);
+	auto op2Type = getLoopDependentVariableType(op2);
 
+	if(op1Type != NO_LOOP_DEPENDENT){
+		setLoopDependentVariableType(I , op1Type);
+	}
+	if(op2Type != NO_LOOP_DEPENDENT){
+		if(op2Type > op1Type){
+			setLoopDependentVariableType(I , op2Type);
+		}
+	}
+
+	// TODO get highest loop priority from the branchConditionStack
+	// If it is InputDependent, set I as conditional, if the branch
+	// is loop dependent, set I as indirect
+
+	/*
 	if(!branchConditionStack.empty()){
+		std::cerr << __func__ << "(): Branch not empty " << I->getParent()->getName().data() << std::endl;	
 		auto bcType = branchConditionStack.top();
 		if(bcType == INPUT_BC_DEPENDENT){
 			setLoopDependentVariableType(I, CONDITIONAL);
@@ -509,6 +567,7 @@ void loopSymx:: checkLoopVariableOnICmp(ICmpInst *I)
 			setLoopDependentVariableType(I, INDIRECT);
 		}
 	}
+	*/
 }
 
 void loopSymx:: checkLoopVariableOnAlloca(AllocaInst *I)
@@ -657,22 +716,43 @@ void loopSymx:: taintLoopDependentVariables()
 
 	for(auto &pathStructure : pathList) {
 		if(pathStructure -> loopExists) {
-			while(!branchConditionStack.empty()){
-				branchConditionStack.pop(); 
-			}
 			BasicBlock* loopBackBB = getLoopBackBB(pathStructure->bbList);
 			assert(loopBackBB != nullptr);
-			//auto itVal = getIteratorLLVMValue(loopBackBB);
-			//loopDependentVariableTypeMap[itVal] = DIRECT; 
-			for(auto &BB : *(pathStructure->bbList)){
-				while(BB != loopBackBB){
-					continue;
+			// mark any variable that has store operation as a loop dependent variable	
+			// wind up to the loop block branch
+			auto BB = pathStructure->bbList->begin();
+			while((*BB)->getName().data() != loopBackBB->getName().data()){
+				BB++;
+			}
+			for(; BB != pathStructure -> bbList->end() ; BB++){
+				for (auto &I : **BB){
+			//	std::cerr << __func__ << "(): checking for " << (*BB)->getName().data() << std::endl;
+				// XXX CHECK FOR LOAD OPERATION STORE HERE TO GET Operation on the 
+				// LOOP DEPENDENT VARIABLE
+                			if (StoreInst *SI = dyn_cast<StoreInst>(&I)) {
+						auto V = SI->getPointerOperand();
+						std::cerr << (*BB)->getName().data() 
+						<< " set variable as LOOP Dependent " << std::endl;
+						setLoopDependentVariableType(V, IS_LOOP_DEPENDENT);
+					}
 				}
-				if(isBranchEndBB(BB)){
-					branchConditionStack.pop();
+			}
+		
+			//classify loop dependency type
+			// wind up to the loop block branch
+			BB = pathStructure->bbList->begin();
+			while((*BB)->getName().data() != loopBackBB->getName().data()){
+					BB++;
+			}
+	
+			for(; BB != pathStructure -> bbList->end() ; BB++){
+				if(isBranchEndBB(*BB, loopBackBB)){
+					assert(!branchConditionStack.empty());
+						branchConditionStack.pop();
 				}
 				// get each basic block in each path
-				for (auto &I : *BB){
+				for (auto &I : **BB){
+				//std::cerr << __func__ << "() ===== processing BB:" << (&I)->getParent()->getName().data() << std::endl;
 					if (LoadInst *LI = dyn_cast<LoadInst>(&I)) {
                 		        	checkLoopVariableOnLoad(LI);
                 			} else if (StoreInst *SI = dyn_cast<StoreInst>(&I)) {
@@ -703,10 +783,8 @@ void loopSymx:: taintLoopDependentVariables()
 	}
 
 	// direct loop dependency - iterator value assigned to a variable
-
 	// indirect loop dependency - loop variable is a branch condition
 	// variable inside branch condition is being set.
-
 }
 
 /* process each path in pathList. Process each basic block of each path.
@@ -724,6 +802,8 @@ void loopSymx:: taintInputDependentVariables(void)
 	// mark input argument values
 	// mark constant values
 	// mark unknown values
+	
+	std::cerr << __func__ << "======== (): BEGIN ==========" << std::endl;
 	
 	for (auto &A : F->args()){
 		//markInput( &A, &(F->getEntryBlock()));
@@ -843,7 +923,7 @@ BasicBlock * loopSymx:: getLoopBackBB(std::list <BasicBlock *> *bbList)
 	for(auto it1 = bbList->begin() ; it1 != bbList->end() ; it1++){
 		for(auto it2 = std::next(it1, 1) ; it2 != bbList->end() ; it2++){
 			if ((*it1)->getName().data() == (*it2)->getName().data()){
-				std::cerr << __func__ << "(): GOT LoopBack BB " << (*it1)->getName().data() << std::endl;
+			//	std::cerr << __func__ << "(): GOT LoopBack BB " << (*it1)->getName().data() << std::endl;
 				return *it1;
 			}	
 		}
@@ -1102,6 +1182,8 @@ void loopSymx:: deriveIteratorProperties()
 			struct iteratorOperation *itOp = new struct iteratorOperation; 
 			struct loopEndCondition *loopEndCond = new struct loopEndCondition;
 			uint64_t startVal = getStartValue(pathStructure);
+			BasicBlock* loopBackBB = getLoopBackBB(pathStructure->bbList);
+			std::cerr << __func__ << "(): ============== LOOP BEGIN BB ================ " << loopBackBB->getName().data() << std::endl;
 			std::cerr << __func__ << "(): START VALUE = " << startVal << std::endl;
 			// OPERATION
 
@@ -1509,17 +1591,25 @@ void loopSymx :: solveConstraints()
 	}
 }
 
+void loopSymx:: initializeDataStructures()
+{
+	while(!branchConditionStack.empty()){
+		branchConditionStack.pop(); 
+	}
+}
+
 bool loopSymx::runOnModule(Module &M_) {
 	M = &M_;
 	for(auto &F_ : M->functions()) {
 		F = &F_;
 		std::stack <BasicBlock *> *bbStack = new std::stack <BasicBlock *>;
 		if(!F->isDeclaration()) {
+			initializeDataStructures();
 			enumeratePaths(&F->getEntryBlock(), bbStack);
 			displayPathList();
 			taintInputDependentVariables();
 			deriveIteratorProperties();
-			taintLoopDependentVariables();
+			//taintLoopDependentVariables();
 			//expandPath();
 			//solvPath();
 
