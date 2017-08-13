@@ -1,0 +1,14 @@
+This folder contains *.c code of linux drivers, and corresponding *.brloop.c code for the linux drivers
+the *.brloop.c code consists of functions from *.c that contain both loop and branch conditions.
+
+Other potential drivers:
+
+ext4
+f2fs
+btrfs
+net/cisco etc
+tty
+video
+usb
+virtio
+xen
