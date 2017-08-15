@@ -30,11 +30,23 @@
 
 import sys
 import random
-
 from random import randint
+from collections import namedtuple
+
+
+##Chromosome = namedtuple('Chromosome', "age fitness chromosome")
+#
+#class Chromosome():
+#    def __init__(self):
+#        self.age = 0
+#        self.fitness = 0
+#        self.chromosome = []
+#    def __init__(self,age,fitness,chromosome):
+#        self.age = age
+#        self.fitness = fitness
+#        self.chromosome = chromosome
 
 # how close is the chromosome sum to postCondition sum
-
 def getFit(x , y):
     maxval = max(x , y)
     minval = min(x , y)
@@ -53,8 +65,22 @@ def mate (x = [] , y =[]):
 def getOldManIndex(age):
     return age.index(min(age))
 
-def getLeastFitGuyIndex(fitness):
-    return fitness.index(max(fitness))
+def getMostFitGuyIndex(population, postCondition):
+    minimum = getFit(sum(population[0]), postCondition)
+    minindex = 0
+    for i in range(1, len(population) -1):
+        if minimum > getFit(sum(population[i]), postCondition):
+            minimum = getFit(sum(population[i]), postCondition)
+            minindex = i
+    return minindex
+
+def getLeastFitGuyIndex(population, postCondition):
+    maximum = getFit(sum(population[0]), postCondition)
+    for i in range(1, len(population) -1):
+        if maximum < getFit(sum(population[i]),postCondition):
+            maximum = getFit(sum(population[i]), postCondition)
+            maxindex = i
+    return maxindex
 
 if __name__ == "__main__":
 #    if len(sys.argv() != 8):
@@ -84,13 +110,13 @@ if __name__ == "__main__":
     postCondition = 75
 
     generation_begin = 1
-    generation_end = 100
-    mutation_chromosome_count = 10
-    mutation_gene_count = 10
+    generation_end = 1000
+    mutation_chromosome_count = 5
+    mutation_gene_count = 5
     age_limit = 10
 
     crossover_count = 10
-    population_size = 1000
+    population_size = 100
 
 ##################################################################################
 
@@ -123,7 +149,6 @@ if __name__ == "__main__":
         chromosome.append(i)
     population.append(chromosome)
                
-
     # all operations of 1 iteration
     chromosome = []
     for i in range (0 , arrsize):
@@ -145,10 +170,8 @@ if __name__ == "__main__":
     #   (sum - end_value) = minimum - assign ranks to each of the population.
     #   keep track of the fitness.
 
-    fitness = []
     for i in range ( 0, len(population)):
-        fitness.append(getFit(sum(population[i]), postCondition))
-        print "chromosome ", i , ' -> ' , population[i], fitness[i]
+        print "chromosome ", i , ' -> ' , population[i], getFit(sum(population[i]), postCondition)
      
 ####################################################################################
 
@@ -173,6 +196,7 @@ if __name__ == "__main__":
             parent2 = population[parent2Index]
             parent2Fitness = getFit(sum(parent2), postCondition)
 
+    #   XXX BUG. update child on each iteration
             child = mate(parent1, parent2)
      #       childFitness = getFit(sum(child), postCondition)
      #       fitness.append(childFitness)
@@ -193,12 +217,12 @@ if __name__ == "__main__":
     #   change from itOperation1 to itOperation2 at 5 random points such that score converges.
         noUpdate = 0
         mutation_chromosome = []
-        for mutation_chromosome_index in range( 0, min(mutation_chromosome_count, len(population) -1)):
+        for mutation_chromosome_index in range( 0, min(mutation_chromosome_count, len(population))):
 
                 # perform mutation
                 mutation_chromosome_index = randint(0, len(population) - 1)
                 mutation_chromosome = population[mutation_chromosome_index]            
-                pre_mutation_fitness = fitness[mutation_chromosome_index]
+                pre_mutation_fitness = getFit(sum(population[mutation_chromosome_index]), postCondition)
                 print "BEFORE chromosome ", mutation_chromosome_index, " -> " , mutation_chromosome 
                 for mutation_gene_index in random.sample(range( 0 , arrsize - 1), mutation_gene_count):
                     mutation_chromosome[mutation_gene_index] = mutation_chromosome[mutation_gene_index] * -1
@@ -215,48 +239,46 @@ if __name__ == "__main__":
                     print "PREMUTATION FITNESS ", pre_mutation_fitness , " GREATER THAN POST MUTATION FITNESS " , post_mutation_fitness, " UPDATED"
                     population[mutation_chromosome_index] = mutation_chromosome
                     age[mutation_chromosome_index] = generation_no
-                    fitness[mutation_chromosome_index] = post_mutation_fitness
         if noUpdate == mutation_chromosome_count:
             # no change, spice it up a little bit
             randomPopulationMutexIndex = randint(0, len(population) - 1) 
             population[randomPopulationMutexIndex] = mutation_chromosome
-            age[randomPopulationMutexIndex] = generation_no
-            fitness[randomPopulationMutexIndex] = post_mutation_fitness
-            
-
-                    
-        print "GENERATION ", generation_no , " END"
-        for i in range ( 0, len(population)):
-            print "chromosome ", i , ' -> ' , population[i] , " Fitness " , fitness[i] , " Age " , age[i]
-
-    #   survivor selection
-    #   remove one of the three
-    #   kill child, kill old man, kill least fit guy.
-
-        oldmanIndex = getOldManIndex(age)
-        leastFitGuyIndex = getLeastFitGuyIndex(fitness)
-    
-#        killwho = random.sample(range(1,3),1)
-        killwho = 2
-       
-        if killwho == 1:
-            population[oldmanIndex] = child
-            age[oldmanIndex] = generation_no
-            fitness[oldmanIndex] = getFit(sum(child), postCondition)
-        elif killwho == 2:
-            population[leastFitGuyIndex] = child
-            age[leastFitGuyIndex] = generation_no
-            fitness[leastFitGuyIndex] = getFit(sum(child), postCondition)
-        # FOR 3 KILL CHILD                  
-
+            age[mutation_chromosome_index] = generation_no
+#            
+#
+#                    
+#        print "GENERATION ", generation_no , " END"
+#        for i in range ( 0, len(population)):
+#            print "chromosome ", i , ' -> ' , population[i] , " Fitness " , fitness[i] , " Age " , age[i]
+#
+#    #   survivor selection
+#    #   remove one of the three
+#    #   kill child, kill old man, kill least fit guy.
+#
+#        oldmanIndex = getOldManIndex(age)
+#        leastFitGuyIndex = getLeastFitGuyIndex(fitness)
+#    
+##        killwho = random.sample(range(1,3),1)
+##        killwho = 2
+##       
+##        if killwho == 1:
+##            population[oldmanIndex] = child
+##            age[oldmanIndex] = generation_no
+##            fitness[oldmanIndex] = getFit(sum(child), postCondition)
+##        elif killwho == 2:
+#        population[leastFitGuyIndex] = child
+#        age[leastFitGuyIndex] = generation_no
+#        fitness[leastFitGuyIndex] = getFit(sum(child), postCondition)
+#        # FOR 3 KILL CHILD                  
+#
         generation_no += 1
 
         for i in range(0, len(population)):
-            if (fitness[i] == 0):
+            if (getFit(sum(population[i]), postCondition) == 0):
                 print "FOUND: " , population[i]
                 break
         print "GENERATION: ", generation_no
-        print "MIN FITNESS" , min(fitness)
-        print "CHROMOSOME = ", population [fitness.index(min(fitness))]
-#   termination condition
-
+        print "MIN FITNESS" , getFit(sum(population[getMostFitGuyIndex(population,postCondition)]), postCondition)
+        print "CHROMOSOME = ", population[getMostFitGuyIndex(population, postCondition)]
+##   termination condition
+#
