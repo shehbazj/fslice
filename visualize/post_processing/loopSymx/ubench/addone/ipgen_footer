@@ -1,0 +1,8 @@
+
+x=s.check()
+if(x == z3.sat):
+	m = s.model()
+	print m
+else:
+	print unsat
+

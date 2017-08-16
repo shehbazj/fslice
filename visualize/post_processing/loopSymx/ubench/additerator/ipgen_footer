@@ -1,0 +1,22 @@
+
+    x=s.check()
+    if(x == z3.sat):
+    	m = s.model()
+    	print m
+    else:
+    	print unsat
+
+if __name__ == '__main__':
+    # Start foo as a process
+    p = multiprocessing.Process(target=foo, name="Foo", args=())
+    p.start()
+
+    # Wait 60 seconds for foo
+    time.sleep(60)
+
+    # Terminate foo
+    p.terminate()
+
+    # Cleanup
+    p.join()
+
